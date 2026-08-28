@@ -9,7 +9,7 @@ what ESI reported for the same skyhooks on the same day.
 
 from django.test import SimpleTestCase
 
-from ..core.siphon import detect_siphon
+from ..core.siphon import detect_siphon, infer_from_peak
 
 
 class DetectSiphonTests(SimpleTestCase):
@@ -80,3 +80,39 @@ class DetectSiphonTests(SimpleTestCase):
         percent, base = detect_siphon(7607)
         self.assertIsNone(percent)
         self.assertIsNone(base)
+
+
+class InferFromPeakTests(SimpleTestCase):
+    """The other half of the detector, for drops the fingerprint cannot see.
+
+    KJ-V0P IV is the case that prompted this: a base of 9200 is a multiple of
+    a hundred, so 10% off it lands on 8280 -- still a round number, still
+    invisible to the fingerprint. Against the 9200 we had already recorded,
+    the ratio is exactly 0.90 and says so.
+    """
+
+    def test_the_real_case_the_fingerprint_missed(self):
+        self.assertEqual(detect_siphon(8280), (None, None))
+        self.assertEqual(infer_from_peak(8280, 9200), (10.0, 9200))
+
+    def test_each_rate_is_recognised(self):
+        for rate in (10, 20, 30, 40, 50):
+            with self.subTest(rate=rate):
+                effective = 9200 * (100 - rate) // 100
+                self.assertEqual(infer_from_peak(effective, 9200), (float(rate), 9200))
+
+    def test_a_skyhook_at_its_peak_is_not_siphoned(self):
+        self.assertEqual(infer_from_peak(9200, 9200), (None, None))
+
+    def test_a_drop_no_rate_explains_is_not_named(self):
+        """Down 7% is a problem, but calling it a den would be inventing one."""
+        self.assertEqual(infer_from_peak(8556, 9200), (None, None))
+
+    def test_a_peak_that_was_never_clean_is_refused(self):
+        """An un-round peak was itself a siphoned reading. It cannot be a base."""
+        self.assertEqual(infer_from_peak(6845, 7605), (None, None))
+
+    def test_missing_figures_are_refused_quietly(self):
+        for effective, peak in ((None, 9200), (8280, None), (0, 9200), (-1, 9200)):
+            with self.subTest(effective=effective, peak=peak):
+                self.assertEqual(infer_from_peak(effective, peak), (None, None))

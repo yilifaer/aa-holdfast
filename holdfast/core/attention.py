@@ -10,6 +10,7 @@ import logging
 from datetime import timedelta
 
 from django.core.cache import cache
+from django.db.models import Q
 from django.utils import timezone
 
 from ..models import (
@@ -189,8 +190,13 @@ def den_count(user) -> int:
             total += DenClaim.objects.filter(
                 slot__in=slots, status=DenClaim.Status.PENDING
             ).count()
+            # Either mechanism counts: the fingerprint is blind whenever the
+            # base was a multiple of a hundred, and a persistent drop against
+            # a skyhook's own peak covers exactly that case.
             total += Skyhook.objects.filter(
-                den_slot__in=slots, workforce_siphon_percent__isnull=False
+                Q(workforce_siphon_percent__isnull=False)
+                | Q(workforce_dropped_at__isnull=False),
+                den_slot__in=slots,
             ).count()
         return total
 

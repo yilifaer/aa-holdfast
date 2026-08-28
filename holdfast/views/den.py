@@ -9,6 +9,7 @@ every member who is farming where.
 from datetime import timedelta
 
 from django.contrib import messages
+from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
@@ -107,8 +108,9 @@ def dashboard(request):
         if not den.is_siphoning:
             continue
         skyhook = den.slot.skyhook if den.slot else None
-        taken = skyhook.siphoned_amount if skyhook else None
-        percent = skyhook.workforce_siphon_percent if skyhook else None
+        percent, taken, _certainty = (
+            skyhook.siphon_estimate if skyhook else (None, None, None)
+        )
         items.append(
             {
                 "severity": "warning",
@@ -188,18 +190,28 @@ def dashboard(request):
                     }
                 )
         for skyhook in Skyhook.objects.filter(
-            den_slot__in=slots, workforce_siphon_percent__isnull=False
-        ).select_related("eve_planet", "eve_solar_system"):
+            Q(workforce_siphon_percent__isnull=False)
+            | Q(workforce_dropped_at__isnull=False),
+            den_slot__in=slots,
+        ).select_related("eve_planet", "eve_solar_system", "den_slot"):
+            percent, taken, certainty = skyhook.siphon_estimate
+            if percent is None:
+                continue
+            slot = skyhook.den_slot
+            holder = slot.holder_name if slot else None
             officer_items.append(
                 {
-                    "severity": "danger",
+                    # A den we know about is a conversation; an unexplained
+                    # one might be someone else's.
+                    "severity": "warning" if holder else "danger",
                     "when": None,
                     "kind": "Den siphoning our workforce",
                     "where": skyhook.planet_name,
                     "system": skyhook.system_name,
                     "detail": (
-                        f"{skyhook.workforce_siphon_percent:.0f}% taken, "
-                        f"{skyhook.siphoned_amount:,} a cycle"
+                        f"{percent:.0f}% taken, {taken:,} a cycle"
+                        f" -- {certainty}"
+                        + (f", run by {holder}" if holder else ", owner unknown")
                     ),
                 }
             )
@@ -335,6 +347,7 @@ def den_list(request):
     rows = []
     for slot in visible_slots(request.user):
         skyhook = slot.skyhook
+        siphon_percent, siphoned_amount, _certainty = skyhook.siphon_estimate
         rows.append(
             {
                 "planet": slot.planet_name,
@@ -344,9 +357,9 @@ def den_list(request):
                 if slot.status == DenSlot.Status.FREE
                 else "taken",
                 "is_hostile": slot.recorded_den and slot.recorded_hostile,
-                "siphon_percent": skyhook.workforce_siphon_percent,
-                "siphoned_amount": skyhook.siphoned_amount,
-                "is_impacting": skyhook.workforce_siphon_percent is not None,
+                "siphon_percent": siphon_percent,
+                "siphoned_amount": siphoned_amount,
+                "is_impacting": siphon_percent is not None,
                 "is_claimable": slot.is_claimable,
                 "slot_pk": slot.pk,
             }
@@ -404,9 +417,15 @@ def admin_page(request):
         entry["characters"].append(den_character.character.character_name)
         entry["dens"].extend(den_character.dens.all())
 
-    siphoned = Skyhook.objects.filter(
-        den_slot__in=slots, workforce_siphon_percent__isnull=False
-    ).select_related("eve_planet", "eve_solar_system", "den_slot")
+    siphoned = [
+        skyhook
+        for skyhook in Skyhook.objects.filter(
+            Q(workforce_siphon_percent__isnull=False)
+            | Q(workforce_dropped_at__isnull=False),
+            den_slot__in=slots,
+        ).select_related("eve_planet", "eve_solar_system", "den_slot")
+        if skyhook.is_siphon_suspected
+    ]
 
     # A siphon only matters to sovereignty once it actually knocks something
     # out, so flag the systems where both things are true at once.

@@ -24,10 +24,13 @@
                         <tr class="holdfast-row--critical">
                             <td>{{ row.skyhook.planet_name }}</td>
                             <td><a href="https://evemaps.dotlan.net/system/{{ row.skyhook.system_name }}" target="_blank" rel="noopener">{{ row.skyhook.system_name }}</a></td>
-                            <td class="holdfast-num text-danger fw-bold">
-                                &minus;{{ row.skyhook.siphoned_amount|intcomma }}
-                                ({{ row.skyhook.workforce_siphon_percent|floatformat:0 }}%)
-                            </td>
+                            {% with estimate=row.skyhook.siphon_estimate %}
+                                <td class="holdfast-num text-danger fw-bold">
+                                    &minus;{{ estimate.1|intcomma }}
+                                    ({{ estimate.0|floatformat:0 }}%)
+                                    <div class="holdfast-sub fw-normal">{{ estimate.2 }}</div>
+                                </td>
+                            {% endwith %}
                             <td class="holdfast-sub">
                                 {% for upgrade in row.upgrades %}
                                     <span class="badge text-bg-danger">{{ upgrade.type_name }}</span>
@@ -100,7 +103,7 @@
             </thead>
             <tbody>
                 {% for slot in slots %}
-                    <tr class="{% if slot.skyhook.workforce_siphon_percent %}holdfast-row--danger{% endif %}">
+                    <tr class="{% if slot.skyhook.is_siphon_suspected %}holdfast-row--danger{% endif %}">
                         <td>{{ slot.planet_name }}</td>
                         <td><a href="https://evemaps.dotlan.net/system/{{ slot.system_name }}" target="_blank" rel="noopener">{{ slot.system_name }}</a></td>
                         <td data-filter-value="{{ slot.status_label }}">
@@ -110,9 +113,13 @@
                         <td>{{ slot.holder_name|default:"&mdash;" }}</td>
                         <td class="holdfast-sub">{{ slot.holder_corporation|default:"&mdash;" }}</td>
                         <td class="holdfast-sub">
-                            {% if slot.skyhook.workforce_siphon_percent %}
-                                <span class="text-danger fw-bold">&minus;{{ slot.skyhook.workforce_siphon_percent|floatformat:0 }}% ({{ slot.skyhook.siphoned_amount|intcomma }})</span>
-                            {% else %}&mdash;{% endif %}
+                            {% with estimate=slot.skyhook.siphon_estimate %}
+                                {% if estimate.0 %}
+                                    <span class="text-danger fw-bold">&minus;{{ estimate.0|floatformat:0 }}% ({{ estimate.1|intcomma }})</span>
+                                    {# measured is arithmetic; inferred rests on the peak having been clean #}
+                                    <div class="holdfast-sub">{{ estimate.2 }}</div>
+                                {% else %}&mdash;{% endif %}
+                            {% endwith %}
                         </td>
                         <td class="text-end">
                             {% if can_manage %}

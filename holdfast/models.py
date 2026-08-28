@@ -415,6 +415,43 @@ class Skyhook(models.Model):
         return self.workforce_base - self.effective_workforce
 
     @property
+    def siphon_estimate(self):
+        """How much is being taken, and how well we know it.
+
+        Two mechanisms answer this, and they disagree about certainty rather
+        than about the number. The fingerprint is arithmetic -- an untouched
+        skyhook cannot report an un-round figure -- so ``measured`` is as
+        certain as anything here gets. Falling exactly to 90% of a peak we
+        recorded ourselves is strong but rests on that peak having been clean,
+        so it is ``inferred``. A drop that no rate explains is ``suspected``:
+        something is wrong, we cannot say it is a den.
+
+        Returns ``(percent, amount, certainty)``, all ``None`` when nothing is
+        being taken.
+        """
+        from .core.siphon import infer_from_peak
+
+        if self.workforce_siphon_percent:
+            return self.workforce_siphon_percent, self.siphoned_amount, "measured"
+        if not self.workforce_dropped_at:
+            return None, None, None
+        percent, base = infer_from_peak(
+            self.effective_workforce, self.workforce_high_water
+        )
+        if percent:
+            return percent, base - self.effective_workforce, "inferred"
+        return (
+            self.workforce_shortfall_percent,
+            self.workforce_shortfall,
+            "suspected",
+        )
+
+    @property
+    def is_siphon_suspected(self) -> bool:
+        """True when either mechanism has something to say."""
+        return self.siphon_estimate[0] is not None
+
+    @property
     def workforce_shortfall(self):
         """How far below its own peak this skyhook's workforce is sitting."""
         if self.workforce_high_water is None or self.effective_workforce is None:

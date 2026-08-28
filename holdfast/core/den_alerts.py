@@ -231,26 +231,47 @@ def check_workforce_siphon() -> int:
         if _already_sent(key):
             continue
 
-        shortfall = skyhook.workforce_shortfall
-        percent = skyhook.workforce_shortfall_percent
+        percent, shortfall, certainty = skyhook.siphon_estimate
+        if percent is None:
+            percent = skyhook.workforce_shortfall_percent
+            shortfall = skyhook.workforce_shortfall
         known_den = MercenaryDen.objects.filter(skyhook_id=skyhook.skyhook_id).first()
         slot = getattr(skyhook, "den_slot", None)
+        holder = slot.holder_name if slot else None
+        ours = bool(known_den or (slot and slot.recorded_den))
 
-        if known_den or (slot and slot.recorded_den):
-            # We already know what is sitting there; no need to raise it as a
-            # mystery. Mark it so the alert does not queue up forever.
-            _mark_sent(key)
-            continue
-
+        # Knowing whose den it is changes the wording, not whether to speak.
+        # An earlier version fell silent here, reasoning that a den we already
+        # know about is no mystery -- but once a census is loaded that covers
+        # nearly every slot, and the alert went quiet everywhere. A den that
+        # has *started* taking workforce is news either way: it has just
+        # reached anarchy 2, and the output came off our own sovereignty.
         delivered = _send(
             _embed(
-                title=f"Workforce shortfall: {skyhook.planet_name}",
+                title=(
+                    f"Our own den is siphoning: {skyhook.planet_name}"
+                    if ours
+                    else f"Workforce shortfall: {skyhook.planet_name}"
+                ),
                 description=(
-                    f"**{skyhook.planet_name}** has been producing "
-                    f"**{shortfall:,} less workforce** "
-                    f"({percent:.0f}% below its own peak).\n"
-                    "No den of ours is anchored there. A hostile den at anarchy "
-                    "level 2 or above siphons workforce exactly like this."
+                    (
+                        f"The den at **{skyhook.planet_name}** has started "
+                        f"taking workforce: **{shortfall:,} a cycle** off this "
+                        f"skyhook.\n"
+                        f"{f'**{holder}**' if holder else 'A den we know about'}"
+                        " runs it. That output was feeding our own "
+                        "sovereignty, so this is worth a word rather than a "
+                        "fleet."
+                    )
+                    if ours
+                    else (
+                        f"**{skyhook.planet_name}** has been producing "
+                        f"**{shortfall:,} less workforce** "
+                        f"({percent:.0f}% below its own peak).\n"
+                        "No den of ours is anchored there. A hostile den at "
+                        "anarchy level 2 or above siphons workforce exactly "
+                        "like this."
+                    )
                 ),
                 color=COLOR_WARNING,
                 fields=[
@@ -265,6 +286,18 @@ def check_workforce_siphon() -> int:
                         name="Corporation",
                         value=skyhook.owner.corporation.corporation_name,
                         inline=True,
+                    ),
+                    Field(
+                        name="How we know",
+                        value={
+                            "measured": "the workforce is not a round number "
+                            "-- arithmetic, not a guess",
+                            "inferred": "it fell to exactly 90/80/70% of a "
+                            "peak we recorded ourselves",
+                            "suspected": "below its own peak, but no siphon "
+                            "rate explains the figure",
+                        }.get(certainty, "below its own peak"),
+                        inline=False,
                     ),
                 ],
                 moments=[("Dropping since", skyhook.workforce_dropped_at)],

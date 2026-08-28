@@ -49,6 +49,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- The workforce-shortfall alert went silent wherever a den was already known,
+  which after importing a den census meant almost everywhere. A den that has
+  *started* taking workforce is news whoever runs it, so it now speaks either
+  way and changes only its wording.
+- Siphon detection covers the case the fingerprint is blind to. A base that is
+  a multiple of a hundred stays round after a percentage comes off it (9200 ->
+  8280), so the arithmetic tell is absent; measured against a peak the app
+  recorded itself, the ratio lands exactly on a known rate. Reported as
+  `inferred` rather than `measured`, since it trusts that the peak was clean.
 - Tactical operations in the `Started` state were dropped from the dashboard
   and the badge, which counted only `Available` ones -- so a member who had
   actually begun an operation saw "All clear" until it expired.
