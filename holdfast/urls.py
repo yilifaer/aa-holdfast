@@ -35,7 +35,7 @@ urlpatterns = [
     path("den/settings/save/", den.settings_save, name="den_settings_save"),
     path("den/settings/test/", den.settings_test, name="den_settings_test"),
     path("den/slot/<int:slot_pk>/claim/", den.claim_slot, name="den_claim_slot"),
-    path("den/slot/<int:slot_pk>/hostile/", den.record_hostile, name="den_record_hostile"),
+    path("den/slot/<int:slot_pk>/record/", den.record_den, name="den_record_den"),
     path("den/claim/<int:claim_pk>/withdraw/", den.withdraw_claim, name="den_withdraw_claim"),
     path(
         "den/claim/<int:claim_pk>/<str:decision>/",

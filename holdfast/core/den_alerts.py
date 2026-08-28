@@ -236,7 +236,7 @@ def check_workforce_siphon() -> int:
         known_den = MercenaryDen.objects.filter(skyhook_id=skyhook.skyhook_id).first()
         slot = getattr(skyhook, "den_slot", None)
 
-        if known_den or (slot and slot.hostile_den_recorded):
+        if known_den or (slot and slot.recorded_den):
             # We already know what is sitting there; no need to raise it as a
             # mystery. Mark it so the alert does not queue up forever.
             _mark_sent(key)
@@ -306,7 +306,7 @@ def check_siphoned_skyhooks() -> int:
             _mark_sent(key)
             continue
 
-        known = " Already recorded as hostile." if (slot and slot.hostile_den_recorded) else ""
+        known = " Already recorded by hand." if (slot and slot.recorded_den) else ""
         delivered = _send(
             _embed(
                 title=f"Den siphoning workforce: {skyhook.planet_name}",

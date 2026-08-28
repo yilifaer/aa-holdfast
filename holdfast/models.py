@@ -826,29 +826,44 @@ class DenSlot(models.Model):
         PENDING = "pending", "Claim pending"
         ASSIGNED = "assigned", "Assigned, not yet anchored"
         ANCHORED = "anchored", "Den anchored"
+        RECORDED = "recorded", "Den recorded by hand"
         HOSTILE = "hostile", "Hostile den"
 
     skyhook = models.OneToOneField(
         Skyhook, on_delete=models.CASCADE, related_name="den_slot"
     )
 
-    hostile_den_recorded = models.BooleanField(
+    # A den ESI will not show us. That is the normal case for a hostile den,
+    # but it is just as true of a friendly one whose operator has not
+    # registered a token here -- an alliance can know perfectly well who is
+    # running a den without being able to read it. Both are recorded the same
+    # way and told apart by ``recorded_hostile``.
+    recorded_den = models.BooleanField(
         default=False,
-        help_text="Someone else's den is sitting here. Recorded by hand.",
+        help_text="A den is sitting here that ESI does not show us.",
     )
-    hostile_owner_note = models.CharField(
+    recorded_hostile = models.BooleanField(
+        default=False,
+        help_text="The recorded den belongs to someone outside the alliance.",
+    )
+    recorded_owner_note = models.CharField(
         max_length=200,
         blank=True,
-        help_text="Who owns it, as far as anyone knows.",
+        help_text="Who is running it, as far as anyone knows.",
     )
-    hostile_recorded_by = models.ForeignKey(
+    recorded_corporation_note = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text="Their corporation, if known.",
+    )
+    recorded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="+",
     )
-    hostile_recorded_at = models.DateTimeField(null=True, blank=True)
+    recorded_at = models.DateTimeField(null=True, blank=True)
 
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(default=timezone.now)
@@ -886,10 +901,13 @@ class DenSlot(models.Model):
 
     @property
     def status(self) -> str:
-        if self.hostile_den_recorded:
-            return self.Status.HOSTILE
+        # A den we can actually read outranks a note somebody typed: if an
+        # operator has since registered a token, the hand record is stale and
+        # the live one is the truth.
         if self.anchored_den:
             return self.Status.ANCHORED
+        if self.recorded_den:
+            return self.Status.HOSTILE if self.recorded_hostile else self.Status.RECORDED
         if self.approved_claim:
             return self.Status.ASSIGNED
         if self.pending_claims.exists():
@@ -913,8 +931,9 @@ class DenSlot(models.Model):
         claim = self.approved_claim
         if claim:
             return claim.character.character_name
-        if self.hostile_den_recorded:
-            return self.hostile_owner_note or "unknown (hostile)"
+        if self.recorded_den:
+            unknown = "unknown (hostile)" if self.recorded_hostile else "unknown"
+            return self.recorded_owner_note or unknown
         return None
 
     @property
@@ -926,6 +945,8 @@ class DenSlot(models.Model):
         claim = self.approved_claim
         if claim:
             return claim.character.corporation_name
+        if self.recorded_den:
+            return self.recorded_corporation_note or None
         return None
 
     @property

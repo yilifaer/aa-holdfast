@@ -269,6 +269,9 @@ tr.holdfast-row--critical > td:first-child { font-weight: 600; padding-left: 0.7
 .holdfast-status--pending::before { background: var(--bs-primary); }
 .holdfast-status--assigned::before { background: var(--holdfast-warning); }
 .holdfast-status--anchored::before { background: var(--holdfast-ok); }
+/* Held, but on a hand record rather than a token -- real, just not
+   self-updating. Distinct from the green of a den we can actually read. */
+.holdfast-status--recorded::before { background: var(--bs-secondary); }
 .holdfast-status--hostile::before { background: var(--holdfast-danger); }
 
 .holdfast-section-title {

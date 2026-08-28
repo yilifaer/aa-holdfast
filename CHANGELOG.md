@@ -16,6 +16,15 @@ All notable changes to this project are documented here. The format follows
 - Mercenary den section: den sites derived from temperate-planet skyhooks, a
   claim and approval workflow, an anonymous availability list, an admin view
   with contact details, and tactical operation tracking.
+- Hand-written den records for any den ESI cannot show, friendly or hostile.
+  Most dens on an alliance's own ground are run by its own members, and knowing
+  who runs one does not require them to have registered a token here. A record
+  is superseded automatically the day its operator does register: a den the app
+  can read outranks a note somebody typed.
+- `holdfast_import_dens`, which loads a den census from CSV. Alliances tend to
+  already keep one in a spreadsheet, and typing it back one slot at a time
+  through the web form is a poor use of an evening. Rows whose planet does not
+  match a slot are reported rather than guessed at.
 - Workforce siphon detection. An untouched skyhook reports a workforce figure
   that is a round multiple of ten; a den takes a percentage and leaves one that
   usually is not. This needs no history, so it catches dens that were already

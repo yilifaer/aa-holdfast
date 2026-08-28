@@ -127,23 +127,35 @@
                         <tr data-filter-follows>
                             <td colspan="7" class="p-0 border-0">
                                 <div class="collapse" id="hostile-{{ slot.pk }}">
-                                    <form method="post" class="d-flex gap-2 align-items-center p-2"
-                                          action="{% url 'holdfast:den_record_hostile' slot.pk %}">
+                                    <form method="post" class="d-flex flex-wrap gap-2 align-items-center p-2"
+                                          action="{% url 'holdfast:den_record_den' slot.pk %}">
                                         {% csrf_token %}
-                                        {% if slot.hostile_den_recorded %}
+                                        {% if slot.recorded_den %}
                                             <input type="hidden" name="present" value="0">
                                             <span class="holdfast-sub">
-                                                {% translate "Recorded by" %} {{ slot.hostile_recorded_by }}
-                                                {{ slot.hostile_recorded_at|date:"Y-m-d" }} &mdash;
-                                                {{ slot.hostile_owner_note|default:_("no owner noted") }}
+                                                {% if slot.recorded_hostile %}{% translate "Hostile" %}{% else %}{% translate "Ours" %}{% endif %} &mdash;
+                                                {{ slot.recorded_owner_note|default:_("no owner noted") }}
+                                                {% if slot.recorded_corporation_note %}({{ slot.recorded_corporation_note }}){% endif %}
+                                                &mdash; {% translate "recorded by" %} {{ slot.recorded_by }}
+                                                {{ slot.recorded_at|date:"Y-m-d" }}
                                             </span>
                                             <button class="btn btn-sm btn-outline-success">{% translate "Clear it" %}</button>
                                         {% else %}
                                             <input type="hidden" name="present" value="1">
                                             <input type="text" name="owner_note" class="form-control form-control-sm"
-                                                   style="max-width: 24rem"
-                                                   placeholder="{% translate 'Who owns the den here, if known' %}">
-                                            <button class="btn btn-sm btn-outline-danger">{% translate "Record a den here" %}</button>
+                                                   style="max-width: 16rem"
+                                                   placeholder="{% translate 'Who is running it' %}">
+                                            <input type="text" name="corporation_note" class="form-control form-control-sm"
+                                                   style="max-width: 14rem"
+                                                   placeholder="{% translate 'Their corporation' %}">
+                                            <div class="form-check form-check-inline m-0">
+                                                <input class="form-check-input" type="checkbox" name="hostile" value="1"
+                                                       id="hostile-flag-{{ slot.pk }}">
+                                                <label class="form-check-label holdfast-sub" for="hostile-flag-{{ slot.pk }}">
+                                                    {% translate "Not one of ours" %}
+                                                </label>
+                                            </div>
+                                            <button class="btn btn-sm btn-outline-primary">{% translate "Record a den here" %}</button>
                                         {% endif %}
                                     </form>
                                 </div>
@@ -155,7 +167,7 @@
         </table>
     </div>
     <p class="holdfast-sub">
-        {% translate "ESI only ever exposes a character's own dens, so anything not run by a registered operator has to be recorded here by hand." %}
+        {% translate "ESI only ever exposes a character's own dens. Anything not run by a registered operator -- hostile or our own -- has to be recorded here by hand, and a hand record is replaced automatically the day its operator registers a token." %}
     </p>
 
     {% if operators %}

@@ -126,9 +126,11 @@ class DenSlotAdmin(admin.ModelAdmin):
         "system_name",
         "status_label",
         "holder_name",
-        "hostile_den_recorded",
+        "recorded_den",
+        "recorded_hostile",
     )
-    list_filter = ("hostile_den_recorded",)
+    list_filter = ("recorded_den",
+        "recorded_hostile",)
     inlines = (DenClaimInline,)
     readonly_fields = ("skyhook", "created_at")
 

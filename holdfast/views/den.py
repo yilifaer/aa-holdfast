@@ -304,7 +304,7 @@ def den_list(request):
                 "status": "available"
                 if slot.status == DenSlot.Status.FREE
                 else "taken",
-                "is_hostile": slot.hostile_den_recorded,
+                "is_hostile": slot.recorded_den and slot.recorded_hostile,
                 "siphon_percent": skyhook.workforce_siphon_percent,
                 "siphoned_amount": skyhook.siphoned_amount,
                 "is_impacting": skyhook.workforce_siphon_percent is not None,
@@ -562,20 +562,30 @@ def decide_claim(request, claim_pk, decision):
 
 @require_any(*DEN_ADMIN)
 @require_POST
-def record_hostile(request, slot_pk):
-    """Record, or clear, a den ESI will never show us."""
+def record_den(request, slot_pk):
+    """Record, or clear, a den ESI will never show us.
+
+    Both kinds go through here: a hostile den, and a friendly one whose
+    operator has not registered a token. The form says which.
+    """
     slot = get_object_or_404(DenSlot, pk=slot_pk)
     present = request.POST.get("present") == "1"
-    slot.hostile_den_recorded = present
-    slot.hostile_owner_note = request.POST.get("owner_note", "")[:200] if present else ""
-    slot.hostile_recorded_by = request.user if present else None
-    slot.hostile_recorded_at = timezone.now() if present else None
+    slot.recorded_den = present
+    slot.recorded_hostile = present and request.POST.get("hostile") == "1"
+    slot.recorded_owner_note = request.POST.get("owner_note", "")[:200] if present else ""
+    slot.recorded_corporation_note = (
+        request.POST.get("corporation_note", "")[:200] if present else ""
+    )
+    slot.recorded_by = request.user if present else None
+    slot.recorded_at = timezone.now() if present else None
     slot.save(
         update_fields=[
-            "hostile_den_recorded",
-            "hostile_owner_note",
-            "hostile_recorded_by",
-            "hostile_recorded_at",
+            "recorded_den",
+            "recorded_hostile",
+            "recorded_owner_note",
+            "recorded_corporation_note",
+            "recorded_by",
+            "recorded_at",
         ]
     )
     messages.success(
