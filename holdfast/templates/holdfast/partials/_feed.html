@@ -1,0 +1,43 @@
+{% comment %}
+Attention feed. Every section builds the same shape of item so the three
+dashboards read identically: severity, when, where, what, detail.
+{% endcomment %}
+{% load i18n %}
+
+{% if not items %}
+    <div class="holdfast-empty">
+        <div class="fs-5 mb-1">{% translate "All clear" %}</div>
+        <div>{{ empty_message|default:_("Nothing here wants attention right now.") }}</div>
+    </div>
+{% else %}
+    <div class="holdfast-feed">
+        {% for item in items %}
+            <div class="holdfast-item holdfast-item--{{ item.severity }}">
+                <div class="holdfast-item__when">
+                    {% if item.when %}{{ item.when|date:"m-d H:i" }} UTC{% else %}&mdash;{% endif %}
+                </div>
+                <div class="holdfast-item__what">
+                    <span class="holdfast-item__where">
+                        {% if item.system %}
+                            <a href="https://evemaps.dotlan.net/system/{{ item.system }}"
+                               target="_blank" rel="noopener">{{ item.where }}</a>
+                        {% else %}
+                            {{ item.where }}
+                        {% endif %}
+                    </span>
+                    &nbsp;&middot;&nbsp;{{ item.kind }}
+                    {% if item.detail %}
+                        <div class="holdfast-item__detail">{{ item.detail }}</div>
+                    {% endif %}
+                </div>
+                {% if item.url %}
+                    <div>
+                        <a class="btn btn-sm btn-outline-secondary" href="{% url item.url %}">
+                            {% translate "Open" %}
+                        </a>
+                    </div>
+                {% endif %}
+            </div>
+        {% endfor %}
+    </div>
+{% endif %}

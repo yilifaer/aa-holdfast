@@ -1,0 +1,69 @@
+{% extends "holdfast/den/base.html" %}
+{% load i18n %}
+{% load humanize %}
+
+{% block holdfast_content %}
+    <div class="holdfast-tiles">
+        <div class="holdfast-tile {% if free_count %}holdfast-tile--ok{% endif %}">
+            <div class="holdfast-tile__label">{% translate "Available" %}</div>
+            <div class="holdfast-tile__value">{{ free_count }}</div>
+            <div class="holdfast-tile__note">{% translate "of" %} {{ rows|length }} {% translate "temperate sites" %}</div>
+        </div>
+        <div class="holdfast-tile {% if impacting_count %}holdfast-tile--danger{% endif %}">
+            <div class="holdfast-tile__label">{% translate "Hurting a skyhook" %}</div>
+            <div class="holdfast-tile__value">{{ impacting_count }}</div>
+            <div class="holdfast-tile__note">{% translate "workforce being siphoned" %}</div>
+        </div>
+    </div>
+
+    <div class="alert alert-secondary py-2 holdfast-sub">
+        {% blocktranslate %}Who holds a site is deliberately not shown here. What matters to everyone is whether the ground is free, and whether whatever sits on it is costing the alliance workforce.{% endblocktranslate %}
+    </div>
+
+    {% if not rows %}
+        <div class="holdfast-empty">{% translate "No temperate-planet skyhooks visible yet." %}</div>
+    {% else %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle" data-filterable
+                   data-filter-placeholder="{% translate 'Search planet or system…' %}">
+                <thead>
+                    <tr>
+                        <th data-filter="{% translate 'Planet' %}">{% translate "Planet" %}</th>
+                        <th data-filter="{% translate 'System' %}">{% translate "System" %}</th>
+                        <th data-filter="{% translate 'Status' %}">{% translate "Availability" %}</th>
+                        <th>{% translate "Impact on the skyhook" %}</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                        <tr class="{% if row.is_impacting %}holdfast-row--danger{% endif %}">
+                            <td>{{ row.planet }}</td>
+                            <td><a href="https://evemaps.dotlan.net/system/{{ row.system }}" target="_blank" rel="noopener">{{ row.system }}</a></td>
+                            <td data-filter-value="{{ row.status }}">
+                                <span class="holdfast-status holdfast-status--{% if row.is_free %}free{% else %}anchored{% endif %}">
+                                    {% if row.is_free %}{% translate "available" %}{% else %}{% translate "taken" %}{% endif %}
+                                </span>
+                            </td>
+                            <td class="holdfast-sub">
+                                {% if row.is_impacting %}
+                                    <span class="text-danger fw-bold">
+                                        &minus;{{ row.siphon_percent|floatformat:0 }}% {% translate "workforce" %}
+                                        ({{ row.siphoned_amount|intcomma }})
+                                    </span>
+                                {% else %}
+                                    <span class="text-body-secondary">{% translate "none detected" %}</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">
+                                {% if can_claim and row.is_claimable %}
+                                    <a class="btn btn-sm btn-primary" href="{% url 'holdfast:den_claim_slot' row.slot_pk %}">{% translate "Claim" %}</a>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+{% endblock %}

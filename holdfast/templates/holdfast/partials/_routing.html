@@ -1,0 +1,59 @@
+{% comment %}
+Per-category Discord routing. Included by each section's settings page, which
+passes only its own categories.
+{% endcomment %}
+{% load i18n %}
+
+<div class="holdfast-section-title">{% translate "Discord channels" %}</div>
+
+{% if not webhooks %}
+    <div class="alert alert-warning py-2 holdfast-sub">
+        {% blocktranslate %}No webhooks exist yet. Add them in Django admin under <strong>Holdfast &rarr; Webhooks</strong> &mdash; the URL is a credential, so it lives there rather than on this page.{% endblocktranslate %}
+    </div>
+{% else %}
+    <div class="alert alert-secondary py-2 holdfast-sub">
+        {% blocktranslate %}Pick which channel each kind of alert goes to. Tick nothing and it goes to every enabled webhook, so an upgrade never leaves you silently unalerted.{% endblocktranslate %}
+    </div>
+    <div class="table-responsive mb-4">
+        <table class="table table-sm align-middle">
+            <thead>
+                <tr>
+                    <th>{% translate "Alert" %}</th>
+                    <th style="width: 6rem">{% translate "Enabled" %}</th>
+                    <th>{% translate "Channels" %}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for route in routes %}
+                    <tr>
+                        <td>{{ route.get_category_display }}</td>
+                        <td>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox"
+                                       name="route_enabled_{{ route.category }}"
+                                       {% if route.is_enabled %}checked{% endif %}>
+                            </div>
+                        </td>
+                        <td>
+                            {% for webhook in webhooks %}
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="checkbox"
+                                           id="rw-{{ route.category }}-{{ webhook.pk }}"
+                                           name="route_webhooks_{{ route.category }}"
+                                           value="{{ webhook.pk }}"
+                                           {% if webhook in route.webhooks.all %}checked{% endif %}>
+                                    <label class="form-check-label holdfast-sub" for="rw-{{ route.category }}-{{ webhook.pk }}">
+                                        {{ webhook.name }}{% if not webhook.is_enabled %} <span class="text-body-secondary">({% translate "disabled" %})</span>{% endif %}
+                                    </label>
+                                </div>
+                            {% endfor %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <p class="holdfast-sub">
+        {% blocktranslate %}Save first, then use <em>Send test alerts</em> below to fire one sample of each category down whatever routing is configured. It uses the same delivery path as a real alert, so anything that arrives really is wired up.{% endblocktranslate %}
+    </p>
+{% endif %}

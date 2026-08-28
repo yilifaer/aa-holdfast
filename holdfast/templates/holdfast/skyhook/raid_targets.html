@@ -1,0 +1,48 @@
+{% extends "holdfast/skyhook/base.html" %}
+{% load i18n %}
+
+{% block holdfast_content %}
+    <div class="alert alert-secondary py-2">
+        {% blocktranslate %}Every skyhook in New Eden currently lootable or about to be. Public ESI data, so everyone else can see it too &mdash; including any of ours in the list.{% endblocktranslate %}
+    </div>
+
+    {% if unresolved %}
+        <div class="alert alert-info py-2 holdfast-sub">
+            {% blocktranslate %}{{ unresolved }} planet(s) have not been named yet. Names are fetched a batch at a time in the background and are permanent once known.{% endblocktranslate %}
+        </div>
+    {% endif %}
+
+    {% if not entries %}
+        <div class="holdfast-empty">{% translate "Nothing raidable right now." %}</div>
+    {% else %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle" data-filterable
+                   data-filter-placeholder="{% translate 'Search planet or system…' %}">
+                <thead>
+                    <tr>
+                        <th data-filter="{% translate 'Planet' %}">{% translate "Planet" %}</th>
+                        <th data-filter="{% translate 'System' %}">{% translate "System" %}</th>
+                        <th>{% translate "Opens (UTC)" %}</th>
+                        <th>{% translate "Closes" %}</th>
+                        <th data-filter="{% translate 'Status' %}">{% translate "Status" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for entry in entries %}
+                        <tr>
+                            <td {% if not entry.is_named %}class="holdfast-sub"{% endif %}>{{ entry.planet }}</td>
+                            <td><a href="https://evemaps.dotlan.net/system/{{ entry.system }}" target="_blank" rel="noopener">{{ entry.system }}</a></td>
+                            <td class="holdfast-sub">{{ entry.start|date:"m-d H:i" }}</td>
+                            <td class="holdfast-sub">{{ entry.end|date:"m-d H:i" }}</td>
+                            <td data-filter-value="{% if entry.is_ours %}ours{% elif entry.is_open %}open{% else %}soon{% endif %}">
+                                {% if entry.is_ours %}<span class="badge text-bg-danger">{% translate "OURS" %}</span>{% endif %}
+                                {% if entry.is_open %}<span class="badge text-bg-warning">{% translate "open now" %}</span>
+                                {% else %}<span class="badge text-bg-secondary">{% translate "soon" %}</span>{% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+{% endblock %}

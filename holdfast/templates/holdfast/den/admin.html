@@ -1,0 +1,197 @@
+{% extends "holdfast/den/base.html" %}
+{% load i18n %}
+{% load humanize %}
+
+{% block holdfast_content %}
+
+    {% if sov_impacted %}
+        <div class="holdfast-section-title">{% translate "Costing us sovereignty upgrades" %}</div>
+        <div class="alert alert-danger py-2">
+            {% blocktranslate %}A siphon only really matters once it knocks something out. In these systems a den is taking workforce <em>and</em> a sovereignty upgrade is unpowered at the same time.{% endblocktranslate %}
+        </div>
+        <div class="table-responsive mb-3">
+            <table class="table table-sm align-middle">
+                <thead>
+                    <tr>
+                        <th>{% translate "Planet" %}</th>
+                        <th>{% translate "System" %}</th>
+                        <th class="holdfast-num">{% translate "Workforce taken" %}</th>
+                        <th>{% translate "Upgrades down" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in sov_impacted %}
+                        <tr class="holdfast-row--critical">
+                            <td>{{ row.skyhook.planet_name }}</td>
+                            <td><a href="https://evemaps.dotlan.net/system/{{ row.skyhook.system_name }}" target="_blank" rel="noopener">{{ row.skyhook.system_name }}</a></td>
+                            <td class="holdfast-num text-danger fw-bold">
+                                &minus;{{ row.skyhook.siphoned_amount|intcomma }}
+                                ({{ row.skyhook.workforce_siphon_percent|floatformat:0 }}%)
+                            </td>
+                            <td class="holdfast-sub">
+                                {% for upgrade in row.upgrades %}
+                                    <span class="badge text-bg-danger">{{ upgrade.type_name }}</span>
+                                {% endfor %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+
+    {% if pending_claims %}
+        <div class="holdfast-section-title">{% translate "Claims awaiting a decision" %}</div>
+        <div class="table-responsive">
+            <table class="table table-sm align-middle" data-filterable
+                   data-filter-placeholder="{% translate 'Search claims…' %}">
+                <thead>
+                    <tr>
+                        <th data-filter="{% translate 'Planet' %}">{% translate "Planet" %}</th>
+                        <th data-filter="{% translate 'Applicant' %}">{% translate "Applicant" %}</th>
+                        <th>{% translate "Character" %}</th>
+                        <th>{% translate "Requested" %}</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for claim in pending_claims %}
+                        <tr>
+                            <td>{{ claim.slot.planet_name }}</td>
+                            <td>{{ claim.user.username }}</td>
+                            <td>{{ claim.character.character_name }}</td>
+                            <td class="holdfast-sub">{{ claim.created_at|date:"Y-m-d H:i" }} UTC</td>
+                            <td class="text-end text-nowrap">
+                                {% if can_manage %}
+                                    <form method="post" class="d-inline" action="{% url 'holdfast:den_decide_claim' claim.pk 'approve' %}">
+                                        {% csrf_token %}
+                                        <button class="btn btn-sm btn-success">{% translate "Approve" %}</button>
+                                    </form>
+                                    <form method="post" class="d-inline" action="{% url 'holdfast:den_decide_claim' claim.pk 'reject' %}">
+                                        {% csrf_token %}
+                                        <button class="btn btn-sm btn-outline-danger">{% translate "Reject" %}</button>
+                                    </form>
+                                {% else %}
+                                    <span class="holdfast-sub">{% translate "a den manager decides" %}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <p class="holdfast-sub">{% translate "Approving one applicant automatically rejects everyone else queued on that site." %}</p>
+    {% endif %}
+
+    <div class="holdfast-section-title">{% translate "Every site, with holders" %}</div>
+    <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle" data-filterable
+               data-filter-placeholder="{% translate 'Search planet, system, holder…' %}">
+            <thead>
+                <tr>
+                    <th data-filter="{% translate 'Planet' %}">{% translate "Planet" %}</th>
+                    <th data-filter="{% translate 'System' %}">{% translate "System" %}</th>
+                    <th data-filter="{% translate 'Status' %}">{% translate "Status" %}</th>
+                    <th>{% translate "Held by" %}</th>
+                    <th data-filter="{% translate 'Corporation' %}">{% translate "Corporation" %}</th>
+                    <th>{% translate "Impact" %}</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for slot in slots %}
+                    <tr class="{% if slot.skyhook.workforce_siphon_percent %}holdfast-row--danger{% endif %}">
+                        <td>{{ slot.planet_name }}</td>
+                        <td><a href="https://evemaps.dotlan.net/system/{{ slot.system_name }}" target="_blank" rel="noopener">{{ slot.system_name }}</a></td>
+                        <td data-filter-value="{{ slot.status_label }}">
+                            <span class="holdfast-status holdfast-status--{{ slot.status }}">{{ slot.status_label }}</span>
+                            {% if slot.is_overdue %}<div class="holdfast-sub text-warning">{% translate "approved, nothing anchored" %}</div>{% endif %}
+                        </td>
+                        <td>{{ slot.holder_name|default:"&mdash;" }}</td>
+                        <td class="holdfast-sub">{{ slot.holder_corporation|default:"&mdash;" }}</td>
+                        <td class="holdfast-sub">
+                            {% if slot.skyhook.workforce_siphon_percent %}
+                                <span class="text-danger fw-bold">&minus;{{ slot.skyhook.workforce_siphon_percent|floatformat:0 }}% ({{ slot.skyhook.siphoned_amount|intcomma }})</span>
+                            {% else %}&mdash;{% endif %}
+                        </td>
+                        <td class="text-end">
+                            {% if can_manage %}
+                                <button class="btn btn-sm btn-outline-secondary" type="button"
+                                        data-bs-toggle="collapse" data-bs-target="#hostile-{{ slot.pk }}">
+                                    {% translate "Record" %}
+                                </button>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% if can_manage %}
+                        <tr data-filter-follows>
+                            <td colspan="7" class="p-0 border-0">
+                                <div class="collapse" id="hostile-{{ slot.pk }}">
+                                    <form method="post" class="d-flex gap-2 align-items-center p-2"
+                                          action="{% url 'holdfast:den_record_hostile' slot.pk %}">
+                                        {% csrf_token %}
+                                        {% if slot.hostile_den_recorded %}
+                                            <input type="hidden" name="present" value="0">
+                                            <span class="holdfast-sub">
+                                                {% translate "Recorded by" %} {{ slot.hostile_recorded_by }}
+                                                {{ slot.hostile_recorded_at|date:"Y-m-d" }} &mdash;
+                                                {{ slot.hostile_owner_note|default:_("no owner noted") }}
+                                            </span>
+                                            <button class="btn btn-sm btn-outline-success">{% translate "Clear it" %}</button>
+                                        {% else %}
+                                            <input type="hidden" name="present" value="1">
+                                            <input type="text" name="owner_note" class="form-control form-control-sm"
+                                                   style="max-width: 24rem"
+                                                   placeholder="{% translate 'Who owns the den here, if known' %}">
+                                            <button class="btn btn-sm btn-outline-danger">{% translate "Record a den here" %}</button>
+                                        {% endif %}
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    {% endif %}
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <p class="holdfast-sub">
+        {% translate "ESI only ever exposes a character's own dens, so anything not run by a registered operator has to be recorded here by hand." %}
+    </p>
+
+    {% if operators %}
+        <div class="holdfast-section-title">{% translate "Operators, and how to reach them" %}</div>
+        <div class="table-responsive">
+            <table class="table table-sm align-middle" data-filterable
+                   data-filter-placeholder="{% translate 'Search operators…' %}">
+                <thead>
+                    <tr>
+                        <th>{% translate "Auth user" %}</th>
+                        <th>{% translate "Main" %}</th>
+                        <th>{% translate "Characters" %}</th>
+                        <th>{% translate "Discord" %}</th>
+                        <th data-filter="{% translate 'Timezone' %}">{% translate "Timezone" %}</th>
+                        <th>{% translate "Their local time" %}</th>
+                        <th class="holdfast-num">{% translate "Dens" %}</th>
+                        <th>{% translate "Note" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for operator in operators %}
+                        <tr>
+                            <td>{{ operator.username }}</td>
+                            <td class="holdfast-sub">{{ operator.main|default:"&mdash;" }}</td>
+                            <td class="holdfast-sub">{{ operator.characters|join:", " }}</td>
+                            <td class="holdfast-sub">{{ operator.discord|default:"&mdash;" }}</td>
+                            <td class="holdfast-sub">{{ operator.timezone|default:"&mdash;" }}</td>
+                            <td class="holdfast-sub">
+                                {% if operator.local_time %}{{ operator.local_time|date:"H:i" }}{% else %}&mdash;{% endif %}
+                            </td>
+                            <td class="holdfast-num">{{ operator.dens|length }}</td>
+                            <td class="holdfast-sub">{{ operator.note|default:"&mdash;" }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+{% endblock %}

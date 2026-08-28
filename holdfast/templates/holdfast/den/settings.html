@@ -1,0 +1,61 @@
+{% extends "holdfast/den/base.html" %}
+{% load i18n %}
+
+{% block holdfast_content %}
+    <form method="post" action="{% url 'holdfast:den_settings_save' %}">
+        {% csrf_token %}
+
+        <div class="holdfast-section-title">{% translate "Claims" %}</div>
+        <div class="row g-3 mb-4">
+            <div class="col-md-4">
+                <label class="form-label">{% translate "Flag an approved claim with nothing anchored after (days)" %}</label>
+                <input type="number" min="1" step="1" name="den_anchor_grace_days" class="form-control"
+                       value="{{ config.den_anchor_grace_days }}">
+                <div class="form-text">{% translate "Only flags it on screen. Nothing is ever revoked automatically." %}</div>
+            </div>
+        </div>
+
+        <div class="holdfast-section-title">{% translate "Siphon detection" %}</div>
+        <div class="alert alert-secondary py-2 holdfast-sub">
+            {% blocktranslate %}Two detectors run side by side. One reads the workforce figure itself &mdash; an un-round number means a den is taking a cut, which needs no history and catches dens that were already there. The other watches for a skyhook falling below its own historic peak, which catches new ones. The settings below tune the second.{% endblocktranslate %}
+        </div>
+        <div class="row g-3 mb-4">
+            <div class="col-md-4">
+                <label class="form-label">{% translate "Flag a drop of at least (%)" %}</label>
+                <input type="number" min="0" step="0.5" name="workforce_drop_percent" class="form-control"
+                       value="{{ config.workforce_drop_percent|floatformat:'-2' }}">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">{% translate "…once it has lasted (hours)" %}</label>
+                <input type="number" min="0" step="1" name="workforce_drop_grace_hours" class="form-control"
+                       value="{{ config.workforce_drop_grace_hours }}">
+            </div>
+        </div>
+
+        <div class="holdfast-section-title">{% translate "Notifications" %}</div>
+        <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" name="notify_den_skyhook_impact" id="ndsi" {% if config.notify_den_skyhook_impact %}checked{% endif %}>
+            <label class="form-check-label" for="ndsi">{% translate "Warn when a den starts siphoning one of our skyhooks" %}</label>
+        </div>
+        <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" name="notify_den_sov_impact" id="ndso" {% if config.notify_den_sov_impact %}checked{% endif %}>
+            <label class="form-check-label" for="ndso">{% translate "Warn when that siphoning knocks a sovereignty upgrade offline" %}</label>
+        </div>
+        <div class="form-check form-switch mb-4">
+            <input class="form-check-input" type="checkbox" name="den_discord_enabled" id="ndd" {% if config.den_discord_enabled %}checked{% endif %}>
+            <label class="form-check-label" for="ndd">{% translate "Post den alerts to Discord" %}</label>
+        </div>
+
+        {% include "holdfast/partials/_routing.html" %}
+
+        <button class="btn btn-primary">{% translate "Save" %}</button>
+    </form>
+
+    <form method="post" action="{% url 'holdfast:den_settings_test' %}" class="mt-3">
+        {% csrf_token %}
+        <button class="btn btn-outline-secondary btn-sm">
+            <i class="fab fa-discord"></i> {% translate "Send test alerts" %}
+        </button>
+        <span class="holdfast-sub ms-2">{% translate "one sample per category in this section" %}</span>
+    </form>
+{% endblock %}

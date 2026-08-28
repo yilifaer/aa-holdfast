@@ -1,0 +1,68 @@
+{% extends "holdfast/skyhook/base.html" %}
+{% load i18n %}
+{% load humanize %}
+
+{% block holdfast_content %}
+    <div class="alert alert-secondary py-2">
+        {% blocktranslate %}Only skyhooks that hold something a raider can take. Workforce and power flow straight to the sovereignty hub &mdash; there is no stock and ESI gives them no theft window, so listing them here would be hundreds of rows of noise.{% endblocktranslate %}
+    </div>
+
+    {% if not skyhooks %}
+        <div class="holdfast-empty">{% translate "No stealable skyhooks tracked yet." %}</div>
+    {% else %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle" data-filterable
+                   data-filter-placeholder="{% translate 'Search planet, system, reagent…' %}">
+                <thead>
+                    <tr>
+                        <th data-filter="{% translate 'Planet' %}">{% translate "Planet" %}</th>
+                        <th data-filter="{% translate 'System' %}">{% translate "System" %}</th>
+                        <th data-filter="{% translate 'Corporation' %}">{% translate "Corporation" %}</th>
+                        <th data-filter="{% translate 'State' %}">{% translate "State" %}</th>
+                        <th class="holdfast-num">{% translate "Unsecured" %}</th>
+                        <th class="holdfast-num">{% translate "Secured" %}</th>
+                        <th>{% translate "Theft window (UTC)" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for skyhook in skyhooks %}
+                        <tr class="{% if skyhook.is_under_attack %}holdfast-row--critical{% elif skyhook.is_theft_window_open %}holdfast-row--warning{% endif %}">
+                            <td>
+                                {{ skyhook.planet_name }}
+                                {% if not skyhook.has_details %}<span class="badge text-bg-secondary">{% translate "queued" %}</span>
+                                {% elif not skyhook.is_active %}<span class="badge text-bg-secondary">{% translate "inactive" %}</span>{% endif %}
+                            </td>
+                            <td><a href="https://evemaps.dotlan.net/system/{{ skyhook.system_name }}" target="_blank" rel="noopener">{{ skyhook.system_name }}</a></td>
+                            <td class="holdfast-sub">{{ skyhook.owner.corporation.corporation_name }}</td>
+                            <td>
+                                <span class="badge {% if skyhook.is_under_attack %}text-bg-danger{% else %}text-bg-success{% endif %}">{{ skyhook.get_state_display }}</span>
+                                {% if skyhook.reinforce_end %}<div class="holdfast-sub">{% translate "out" %} {{ skyhook.reinforce_end|date:"m-d H:i" }}</div>{% endif %}
+                            </td>
+                            <td class="holdfast-num {% if skyhook.total_unsecured %}fw-bold text-warning{% endif %}">{{ skyhook.total_unsecured|intcomma }}</td>
+                            <td class="holdfast-num">{{ skyhook.total_secured|intcomma }}</td>
+                            <td class="holdfast-sub">
+                                {% if skyhook.theft_start %}
+                                    {% if skyhook.is_theft_window_open %}<span class="badge text-bg-warning">{% translate "OPEN NOW" %}</span>{% endif %}
+                                    {{ skyhook.theft_start|date:"m-d H:i" }} &rarr; {{ skyhook.theft_end|date:"H:i" }}
+                                {% else %}&mdash;{% endif %}
+                            </td>
+                        </tr>
+                        {% if skyhook.reagents.all %}
+                            <tr class="small" data-filter-follows>
+                                <td></td>
+                                <td colspan="6" class="text-body-secondary">
+                                    {% for reagent in skyhook.reagents.all %}
+                                        {{ reagent.type_name }}:
+                                        <strong>{{ reagent.unsecured_stock|intcomma }}</strong> {% translate "unsecured" %}
+                                        / {{ reagent.secured_stock|intcomma }} {% translate "secured" %}{% if not forloop.last %} &nbsp;&middot;&nbsp; {% endif %}
+                                    {% endfor %}
+                                </td>
+                            </tr>
+                        {% endif %}
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <p class="holdfast-sub">{% translate "Unsecured stock is the part a raider can take once the window opens. Secured stock is safe." %}</p>
+    {% endif %}
+{% endblock %}

@@ -1,0 +1,46 @@
+{% extends "holdfast/sov/base.html" %}
+{% load i18n %}
+{% load holdfast_tags %}
+
+{% block holdfast_content %}
+    <div class="alert alert-secondary">
+        {% blocktranslate %}Industry cost indices for every system the alliance holds, shown the way the game shows them. These are the percentages applied to job fees, so lower is cheaper. Public data, refreshed hourly.{% endblocktranslate %}
+    </div>
+
+    {% if not rows %}
+        <div class="holdfast-empty">{% translate "No cost indices yet. They arrive with the next hourly refresh." %}</div>
+    {% else %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle" data-filterable
+                   data-filter-placeholder="{% translate 'Search system or region…' %}">
+                <thead>
+                    <tr>
+                        <th data-filter="{% translate 'System' %}">{% translate "System" %}</th>
+                        <th data-filter="{% translate 'Region' %}">{% translate "Region" %}</th>
+                        <th class="holdfast-num">{% translate "Manufacturing" %}</th>
+                        <th class="holdfast-num">{% translate "Reaction" %}</th>
+                        <th class="holdfast-num">{% translate "Copying" %}</th>
+                        <th class="holdfast-num">{% translate "Invention" %}</th>
+                        <th class="holdfast-num">{% translate "Research TE" %}</th>
+                        <th class="holdfast-num">{% translate "Research ME" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                        <tr>
+                            <td><a href="https://evemaps.dotlan.net/system/{{ row.system_name }}" target="_blank" rel="noopener">{{ row.system_name }}</a></td>
+                            <td class="holdfast-sub">{{ row.region_name|default:"&mdash;" }}</td>
+                            <td class="holdfast-num">{{ row.manufacturing|as_percent }}</td>
+                            <td class="holdfast-num">{{ row.reaction|as_percent }}</td>
+                            <td class="holdfast-num">{{ row.copying|as_percent }}</td>
+                            <td class="holdfast-num">{{ row.invention|as_percent }}</td>
+                            <td class="holdfast-num">{{ row.researching_time_efficiency|as_percent }}</td>
+                            <td class="holdfast-num">{{ row.researching_material_efficiency|as_percent }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <p class="holdfast-sub">{% translate "Sorted cheapest-to-build first. Use the filter box to narrow by system or region." %}</p>
+    {% endif %}
+{% endblock %}

@@ -1,0 +1,83 @@
+{% extends "holdfast/sov/base.html" %}
+{% load i18n %}
+
+{% block holdfast_content %}
+    <div class="holdfast-tiles">
+        <div class="holdfast-tile {% if reinforced %}holdfast-tile--critical{% endif %}">
+            <div class="holdfast-tile__label">{% translate "Reinforced" %}</div>
+            <div class="holdfast-tile__value">{{ reinforced }}</div>
+            <div class="holdfast-tile__note">{% translate "defence event running" %}</div>
+        </div>
+        <div class="holdfast-tile {% if vulnerable %}holdfast-tile--warning{% endif %}">
+            <div class="holdfast-tile__label">{% translate "Attackable now" %}</div>
+            <div class="holdfast-tile__value">{{ vulnerable }}</div>
+            <div class="holdfast-tile__note">{% translate "window open" %}</div>
+        </div>
+        <div class="holdfast-tile holdfast-tile--ok">
+            <div class="holdfast-tile__label">{% translate "Safe" %}</div>
+            <div class="holdfast-tile__value">{{ safe }}</div>
+            <div class="holdfast-tile__note">{% translate "nothing to do" %}</div>
+        </div>
+    </div>
+
+    {% if not rows %}
+        <div class="holdfast-empty">{% translate "No sovereignty systems recorded yet." %}</div>
+    {% else %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle" data-filterable
+                   data-filter-placeholder="{% translate 'Search systems…' %}">
+                <thead>
+                    <tr>
+                        <th data-filter="{% translate 'Status' %}">{% translate "Status" %}</th>
+                        <th data-filter="{% translate 'System' %}">{% translate "System" %}</th>
+                        <th>{% translate "Vulnerability window (UTC)" %}</th>
+                        <th>{% translate "Defence event" %}</th>
+                        <th class="holdfast-num">{% translate "ADM" %}</th>
+                        <th data-filter="{% translate 'Corporation' %}">{% translate "Corporation" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                        <tr>
+                            <td data-filter-value="{{ row.status }}">
+                                {% if row.status == 'reinforced' %}
+                                    <span class="badge text-bg-danger">{% translate "REINFORCED" %}</span>
+                                {% elif row.status == 'vulnerable' %}
+                                    <span class="badge text-bg-warning">{% translate "attackable" %}</span>
+                                {% else %}
+                                    <span class="badge text-bg-success">{% translate "safe" %}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <a href="https://evemaps.dotlan.net/system/{{ row.system }}" target="_blank" rel="noopener">{{ row.system }}</a>
+                                {% if row.is_capital %}<span class="badge text-bg-primary">{% translate "capital" %}</span>{% endif %}
+                            </td>
+                            <td class="holdfast-sub">
+                                {% if row.window_start %}
+                                    {{ row.window_start|date:"m-d H:i" }} &ndash; {{ row.window_end|date:"H:i" }}
+                                {% else %}&mdash;{% endif %}
+                            </td>
+                            <td class="holdfast-sub">
+                                {% if row.campaign %}
+                                    {% translate "starts" %} {{ row.campaign.start_time|date:"m-d H:i" }}
+                                    {% if row.campaign.has_started %}
+                                        <div>
+                                            {% translate "defender" %} {{ row.campaign.defender_score|floatformat:2 }}
+                                            &middot;
+                                            {% translate "attacker" %} {{ row.campaign.attackers_score|floatformat:2 }}
+                                        </div>
+                                    {% endif %}
+                                {% else %}&mdash;{% endif %}
+                            </td>
+                            <td class="holdfast-num">{{ row.adm|floatformat:2|default:"&mdash;" }}</td>
+                            <td class="holdfast-sub">{{ row.corporation|default:"&mdash;" }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <p class="holdfast-sub">
+            {% translate "Reinforced means an Entosis defence event exists against that hub. The structure route reports the daily window whether or not anyone showed up, so a campaign is the only public evidence of an actual attack." %}
+        </p>
+    {% endif %}
+{% endblock %}

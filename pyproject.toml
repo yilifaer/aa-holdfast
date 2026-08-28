@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aa-holdfast"
+dynamic = ["version"]
+description = "Sovereignty hub fuel, orbital skyhooks and mercenary dens for Alliance Auth, on the Equinox ESI routes."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "Invidia Gloriae Comes" }]
+keywords = ["eve online", "allianceauth", "sovereignty", "skyhook", "mercenary den", "nullsec", "esi"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Web Environment",
+    "Framework :: Django",
+    "Framework :: Django :: 4.2",
+    "Intended Audience :: End Users/Desktop",
+    "Natural Language :: English",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Games/Entertainment",
+    "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
+]
+dependencies = [
+    "allianceauth>=4.6",
+    "django-esi>=9.10",
+    "django-eveuniverse>=1.5",
+    "allianceauth-app-utils>=1.19",
+    "dhooks-lite>=1.1",
+]
+
+[project.urls]
+Homepage = "https://github.com/yilifaer/aa-holdfast"
+Source = "https://github.com/yilifaer/aa-holdfast"
+Changelog = "https://github.com/yilifaer/aa-holdfast/blob/main/CHANGELOG.md"
+Issues = "https://github.com/yilifaer/aa-holdfast/issues"
+
+[tool.setuptools.packages.find]
+include = ["holdfast*"]
+
+[tool.setuptools.dynamic]
+version = { attr = "holdfast.__version__" }
+
+[tool.setuptools.package-data]
+holdfast = ["templates/**/*", "static/**/*", "locale/**/*"]
+
+[tool.ruff]
+line-length = 90
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "DJ"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"*/migrations/*" = ["E501", "I"]

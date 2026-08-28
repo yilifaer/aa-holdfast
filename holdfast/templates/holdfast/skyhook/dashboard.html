@@ -1,0 +1,68 @@
+{% extends "holdfast/skyhook/base.html" %}
+{% load i18n %}
+{% load humanize %}
+
+{% block holdfast_content %}
+    <div class="holdfast-tiles">
+        <div class="holdfast-tile {% if open_now %}holdfast-tile--danger{% elif item_count %}holdfast-tile--warning{% else %}holdfast-tile--ok{% endif %}">
+            <div class="holdfast-tile__label">{% translate "Needs attention" %}</div>
+            <div class="holdfast-tile__value">{{ item_count }}</div>
+            <div class="holdfast-tile__note">{{ open_now }} {% translate "window open now" %}</div>
+        </div>
+        <a class="holdfast-tile" href="{% url 'holdfast:skyhook_list' %}">
+            <div class="holdfast-tile__label">{% translate "Stealable skyhooks" %}</div>
+            <div class="holdfast-tile__value">{{ tracked_count }}</div>
+            <div class="holdfast-tile__note">{% translate "lava and ice only" %}</div>
+        </a>
+        <a class="holdfast-tile {% if attacked_count %}holdfast-tile--critical{% endif %}" href="{% url 'holdfast:skyhook_timers' %}">
+            <div class="holdfast-tile__label">{% translate "Under attack" %}</div>
+            <div class="holdfast-tile__value">{{ attacked_count }}</div>
+            <div class="holdfast-tile__note">{% translate "reinforced or being shot" %}</div>
+        </a>
+    </div>
+
+    <div class="holdfast-section-title">{% translate "Stealable in the next 24 hours" %}</div>
+    {% if not upcoming %}
+        <div class="holdfast-empty">{% translate "No theft window opens in the next 24 hours." %}</div>
+    {% else %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle" data-filterable
+                   data-filter-placeholder="{% translate 'Search…' %}">
+                <thead>
+                    <tr>
+                        <th>{% translate "Opens (UTC)" %}</th>
+                        <th>{% translate "Closes" %}</th>
+                        <th data-filter="{% translate 'Planet' %}">{% translate "Planet" %}</th>
+                        <th data-filter="{% translate 'System' %}">{% translate "System" %}</th>
+                        <th class="holdfast-num">{% translate "Unsecured" %}</th>
+                        <th>{% translate "Over the bar" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in upcoming %}
+                        <tr class="{% if row.is_open %}holdfast-row--danger{% elif row.tripped %}holdfast-row--warning{% endif %}">
+                            <td class="text-nowrap">
+                                {{ row.skyhook.theft_start|date:"m-d H:i" }}
+                                {% if row.is_open %}<span class="badge text-bg-danger">{% translate "OPEN" %}</span>{% endif %}
+                            </td>
+                            <td class="text-nowrap holdfast-sub">{{ row.skyhook.theft_end|date:"m-d H:i" }}</td>
+                            <td>{{ row.skyhook.planet_name }}</td>
+                            <td><a href="https://evemaps.dotlan.net/system/{{ row.skyhook.system_name }}" target="_blank" rel="noopener">{{ row.skyhook.system_name }}</a></td>
+                            <td class="holdfast-num {% if row.tripped %}fw-bold text-warning{% endif %}">{{ row.total|intcomma }}</td>
+                            <td class="holdfast-sub">
+                                {% for reagent, bar in row.tripped %}
+                                    <div>{{ reagent.type_name }}: {{ reagent.unsecured_stock|intcomma }} <span class="text-body-secondary">({% translate "bar" %} {{ bar|intcomma }})</span></div>
+                                {% empty %}
+                                    <span class="text-body-secondary">{% translate "under every bar" %}</span>
+                                {% endfor %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+
+    <div class="holdfast-section-title">{% translate "What wants attention" %}</div>
+    {% include "holdfast/partials/_feed.html" with empty_message=_("Nothing is being shot and nothing worth collecting is about to open.") %}
+{% endblock %}

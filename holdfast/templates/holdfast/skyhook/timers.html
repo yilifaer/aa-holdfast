@@ -1,0 +1,37 @@
+{% extends "holdfast/skyhook/base.html" %}
+{% load i18n %}
+
+{% block holdfast_content %}
+    {% if not entries %}
+        <div class="holdfast-empty">
+            <div class="fs-5 mb-1">{% translate "Nothing reinforced" %}</div>
+            <div>{% translate "This page only lists skyhooks currently in reinforcement. Empty is good news." %}</div>
+        </div>
+    {% else %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle" data-filterable
+                   data-filter-placeholder="{% translate 'Search…' %}">
+                <thead>
+                    <tr>
+                        <th>{% translate "Comes out (UTC)" %}</th>
+                        <th data-filter="{% translate 'Planet' %}">{% translate "Planet" %}</th>
+                        <th data-filter="{% translate 'System' %}">{% translate "System" %}</th>
+                        <th data-filter="{% translate 'State' %}">{% translate "State" %}</th>
+                        <th data-filter="{% translate 'Corporation' %}">{% translate "Corporation" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for entry in entries %}
+                        <tr class="holdfast-row--critical">
+                            <td class="text-nowrap">{{ entry.when|date:"Y-m-d H:i" }}</td>
+                            <td>{{ entry.where }}</td>
+                            <td><a href="https://evemaps.dotlan.net/system/{{ entry.system }}" target="_blank" rel="noopener">{{ entry.system }}</a></td>
+                            <td><span class="badge text-bg-danger">{{ entry.state }}</span></td>
+                            <td class="holdfast-sub">{{ entry.corporation }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+{% endblock %}

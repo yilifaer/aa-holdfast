@@ -1,0 +1,74 @@
+{% extends "holdfast/skyhook/base.html" %}
+{% load i18n %}
+{% load humanize %}
+
+{% block holdfast_content %}
+    <div class="alert alert-secondary">
+        {% blocktranslate %}Each reagent gets its own bar. They are not worth the same trip &mdash; a hauler will cross the region for magmatic gas and shrug at the same count of something cheap &mdash; so one shared number always ends up either noisy or blind.{% endblocktranslate %}
+    </div>
+
+    <form method="post" action="{% url 'holdfast:skyhook_settings_save' %}">
+        {% csrf_token %}
+
+        <div class="holdfast-section-title">{% translate "Alert bars, per reagent" %}</div>
+        {% if not thresholds %}
+            <div class="holdfast-empty">{% translate "No reagents seen yet. A row appears here the first time each one shows up on a skyhook." %}</div>
+        {% else %}
+            <div class="table-responsive mb-4">
+                <table class="table table-sm align-middle">
+                    <thead>
+                        <tr>
+                            <th>{% translate "Reagent" %}</th>
+                            <th style="width: 14rem">{% translate "Alert at or above" %}</th>
+                            <th>{% translate "Enabled" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for threshold in thresholds %}
+                            <tr>
+                                <td>{{ threshold.type_name }}</td>
+                                <td>
+                                    <input type="number" min="0" step="1" class="form-control form-control-sm"
+                                           name="threshold_{{ threshold.type_id }}"
+                                           value="{{ threshold.min_unsecured }}">
+                                </td>
+                                <td>
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox"
+                                               name="enabled_{{ threshold.type_id }}"
+                                               {% if threshold.is_enabled %}checked{% endif %}>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% endif %}
+
+        <div class="holdfast-section-title">{% translate "Timing and delivery" %}</div>
+        <div class="row g-3 mb-3">
+            <div class="col-md-4">
+                <label class="form-label">{% translate "Warn this many minutes before a window opens" %}</label>
+                <input type="number" min="0" step="5" name="skyhook_theft_lead_minutes" class="form-control"
+                       value="{{ config.skyhook_theft_lead_minutes }}">
+            </div>
+        </div>
+        <div class="form-check form-switch mb-4">
+            <input class="form-check-input" type="checkbox" name="skyhook_discord_enabled" id="skd" {% if config.skyhook_discord_enabled %}checked{% endif %}>
+            <label class="form-check-label" for="skd">{% translate "Post skyhook alerts to Discord" %}</label>
+        </div>
+
+        {% include "holdfast/partials/_routing.html" %}
+
+        <button class="btn btn-primary">{% translate "Save" %}</button>
+    </form>
+
+    <form method="post" action="{% url 'holdfast:skyhook_settings_test' %}" class="mt-3">
+        {% csrf_token %}
+        <button class="btn btn-outline-secondary btn-sm">
+            <i class="fab fa-discord"></i> {% translate "Send test alerts" %}
+        </button>
+        <span class="holdfast-sub ms-2">{% translate "one sample per category in this section" %}</span>
+    </form>
+{% endblock %}

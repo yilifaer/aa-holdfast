@@ -1,0 +1,90 @@
+{% extends "holdfast/sov/base.html" %}
+{% load i18n %}
+{% load humanize %}
+{% load holdfast_tags %}
+
+{% block holdfast_content %}
+    {% if not rows %}
+        <div class="holdfast-empty">
+            {% translate "No sovereignty hubs yet." %}
+            {% if perms.holdfast.manage_owners %}
+                {% translate "Register a corporation on the Owners page to start pulling data." %}
+            {% endif %}
+        </div>
+    {% else %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle" data-filterable
+                   data-filter-placeholder="{% translate 'Search system, corp, reagent…' %}">
+                <thead>
+                    <tr>
+                        <th data-filter="{% translate 'System' %}">{% translate "System" %}</th>
+                        <th data-filter="{% translate 'Corporation' %}">{% translate "Corporation" %}</th>
+                        <th data-filter="{% translate 'Status' %}">{% translate "Status" %}</th>
+                        <th>{% translate "Fuel left" %}</th>
+                        <th>{% translate "Runs dry (UTC)" %}</th>
+                        <th>{% translate "Reagents" %}</th>
+                        <th class="holdfast-num">{% translate "Power" %}</th>
+                        <th class="holdfast-num">{% translate "Workforce" %}</th>
+                        <th>{% translate "Upgrades" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                        <tr class="{% if row.severity %}holdfast-row--{{ row.severity }}{% endif %}">
+                            <td>
+                                <a href="https://evemaps.dotlan.net/system/{{ row.hub.system_name }}"
+                                   target="_blank" rel="noopener">{{ row.hub.system_name }}</a>
+                            </td>
+                            <td class="holdfast-sub">{{ row.hub.owner.corporation.corporation_name }}</td>
+                            <td data-filter-value="{% if row.severity %}{{ row.severity }}{% elif not row.hub.has_details %}queued{% elif not row.hub.fuel_expires_at %}idle{% else %}ok{% endif %}">
+                                {% if not row.hub.has_details %}
+                                    <span class="badge text-bg-secondary">{% translate "queued" %}</span>
+                                {% elif row.severity %}
+                                    <span class="badge {% if row.severity == 'warning' %}text-bg-warning{% else %}text-bg-danger{% endif %}">{{ row.severity }}</span>
+                                {% elif not row.hub.fuel_expires_at %}
+                                    <span class="badge text-bg-secondary">{% translate "idle" %}</span>
+                                {% else %}
+                                    <span class="badge text-bg-success">{% translate "ok" %}</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-nowrap">
+                                {% if row.hub.fuel_expires_at %}
+                                    <strong>{{ row.hub.hours_of_fuel_left|hours_human }}</strong>
+                                {% else %}
+                                    <span class="holdfast-sub">{% translate "nothing burning" %}</span>
+                                {% endif %}
+                            </td>
+                            <td class="holdfast-sub">
+                                {% if row.hub.fuel_expires_at %}{{ row.hub.fuel_expires_at|date:"Y-m-d H:i" }}{% else %}&mdash;{% endif %}
+                            </td>
+                            <td class="holdfast-sub">
+                                {% for reagent in row.hub.reagents.all %}
+                                    <div>
+                                        {{ reagent.type_name }}: {{ reagent.amount|intcomma }}
+                                        <span class="text-body-secondary">(-{{ reagent.burning_per_hour|intcomma }}/h, {{ reagent.hours_left|hours_human }})</span>
+                                    </div>
+                                {% empty %}&mdash;{% endfor %}
+                            </td>
+                            <td class="holdfast-num holdfast-sub {% if row.hub.power_free < 0 %}text-danger fw-bold{% endif %}">
+                                {{ row.hub.power_allocated|intcomma }} / {{ row.hub.power_available|intcomma }}
+                            </td>
+                            <td class="holdfast-num holdfast-sub {% if row.hub.workforce_free < 0 %}text-danger fw-bold{% endif %}">
+                                {{ row.hub.workforce_allocated|intcomma }} / {{ row.hub.workforce_available|intcomma }}
+                            </td>
+                            <td class="holdfast-sub">
+                                {% for upgrade in row.hub.upgrades.all %}
+                                    <span class="badge {% if upgrade.power_state == 'Online' %}text-bg-success{% elif upgrade.power_state == 'Low' %}text-bg-danger{% elif upgrade.power_state == 'Pending' %}text-bg-warning{% else %}text-bg-secondary{% endif %}"
+                                          title="{{ upgrade.power_state }}">{{ upgrade.type_name }}</span>
+                                {% empty %}&mdash;{% endfor %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <p class="holdfast-sub">
+            {% blocktranslate with warn=config.fuel_warning_days|floatformat:"-1" danger=config.fuel_danger_days|floatformat:"-1" crit=config.fuel_critical_days|floatformat:"-1" %}Amber under {{ warn }} days, red under {{ danger }}, critical under {{ crit }}. The same numbers drive the Discord alerts.{% endblocktranslate %}
+            {% translate "Countdowns are extrapolated from the reagent bay snapshot ESI reports, which CCP caches for one hour." %}
+        </p>
+    {% endif %}
+{% endblock %}

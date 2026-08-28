@@ -1,0 +1,32 @@
+{% extends "holdfast/den/base.html" %}
+{% load i18n %}
+
+{% block holdfast_content %}
+    <div class="holdfast-tiles">
+        <a class="holdfast-tile" href="{% url 'holdfast:den_information' %}">
+            <div class="holdfast-tile__label">{% translate "Your dens" %}</div>
+            <div class="holdfast-tile__value">{{ my_den_count }}</div>
+            <div class="holdfast-tile__note">{{ my_characters|length }} {% translate "character(s) registered" %}</div>
+        </a>
+        <div class="holdfast-tile {% if items %}holdfast-tile--warning{% else %}holdfast-tile--ok{% endif %}">
+            <div class="holdfast-tile__label">{% translate "Wants your attention" %}</div>
+            <div class="holdfast-tile__value">{{ items|length }}</div>
+            <div class="holdfast-tile__note">{% translate "on your own dens" %}</div>
+        </div>
+        {% if can_view_all %}
+            <a class="holdfast-tile {% if officer_items %}holdfast-tile--danger{% endif %}" href="{% url 'holdfast:den_admin' %}">
+                <div class="holdfast-tile__label">{% translate "Alliance-wide" %}</div>
+                <div class="holdfast-tile__value">{{ officer_items|length }}</div>
+                <div class="holdfast-tile__note">{% translate "claims, siphons, overdue" %}</div>
+            </a>
+        {% endif %}
+    </div>
+
+    <div class="holdfast-section-title">{% translate "Yours" %}</div>
+    {% include "holdfast/partials/_feed.html" with empty_message=_("Nothing is happening to your dens.") %}
+
+    {% if can_view_all %}
+        <div class="holdfast-section-title">{% translate "Across the alliance" %}</div>
+        {% include "holdfast/partials/_feed.html" with items=officer_items empty_message=_("No claims waiting, nothing being siphoned, nothing overdue.") %}
+    {% endif %}
+{% endblock %}

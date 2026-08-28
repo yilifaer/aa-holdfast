@@ -1,0 +1,54 @@
+{% extends "holdfast/sov/base.html" %}
+{% load i18n %}
+
+{% block holdfast_content %}
+    {% if not systems %}
+        <div class="holdfast-empty">{% translate "No sovereignty systems recorded yet. The public sovereignty map task fills this in." %}</div>
+    {% else %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle" data-filterable
+                   data-filter-placeholder="{% translate 'Search systems…' %}">
+                <thead>
+                    <tr>
+                        <th data-filter="{% translate 'System' %}">{% translate "System" %}</th>
+                        <th class="holdfast-num">{% translate "ADM" %}</th>
+                        <th data-filter="{% translate 'Military' %}">{% translate "Military" %}</th>
+                        <th data-filter="{% translate 'Industrial' %}">{% translate "Industrial" %}</th>
+                        <th data-filter="{% translate 'Strategic' %}">{% translate "Strategic" %}</th>
+                        <th>{% translate "Vulnerability (UTC)" %}</th>
+                        <th>{% translate "Held since" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for system in systems %}
+                        <tr class="{% if threshold and system.activity_defense_multiplier < threshold %}holdfast-row--danger{% endif %}">
+                            <td>
+                                <a href="https://evemaps.dotlan.net/system/{{ system.system_name }}" target="_blank" rel="noopener">{{ system.system_name }}</a>
+                                {% if system.is_capital_system %}<span class="badge text-bg-primary">{% translate "capital" %}</span>{% endif %}
+                            </td>
+                            <td class="holdfast-num">
+                                <strong>{{ system.activity_defense_multiplier|floatformat:2 }}</strong>
+                                {% if threshold and system.activity_defense_multiplier < threshold %}
+                                    <span class="badge text-bg-danger">{% translate "low" %}</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ system.military_level|default_if_none:"-" }}</td>
+                            <td>{{ system.industrial_level|default_if_none:"-" }}</td>
+                            <td>{{ system.strategic_level|default_if_none:"-" }}</td>
+                            <td class="holdfast-sub">
+                                {% if system.vulnerability_start %}{{ system.vulnerability_start|date:"H:i" }}&ndash;{{ system.vulnerability_end|date:"H:i" }}{% else %}&mdash;{% endif %}
+                            </td>
+                            <td class="holdfast-sub">{{ system.claimed_since|date:"Y-m-d" }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <p class="holdfast-sub">
+            {% if threshold %}
+                {% blocktranslate %}Rows go red below the ADM threshold, which a SOV manager sets on the settings page.{% endblocktranslate %}
+            {% endif %}
+            {% translate "Straight from the public sovereignty route -- no token needed, and it covers every system the alliance holds whether or not that corporation has registered here." %}
+        </p>
+    {% endif %}
+{% endblock %}

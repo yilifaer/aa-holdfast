@@ -1,0 +1,28 @@
+{% extends 'allianceauth/base-bs5.html' %}
+{% load i18n %}
+{% load static %}
+{% load navactive %}
+
+{% block page_title %}{% translate "SOV Monitor" %}{% endblock %}
+{% block header_nav_brand %}{% translate "SOV Monitor" %}{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{% static 'holdfast/holdfast.css' %}">{% endblock %}
+
+{% block header_nav_collapse_left %}
+    {% if can_view_all %}
+        <li class="nav-item"><a class="nav-link {% navactive request 'holdfast:sov_dashboard' %}" href="{% url 'holdfast:sov_dashboard' %}">{% translate "Dashboard" %}</a></li>
+        <li class="nav-item"><a class="nav-link {% navactive request 'holdfast:sov_fuel' %}" href="{% url 'holdfast:sov_fuel' %}">{% translate "Hub Fuel" %}</a></li>
+        <li class="nav-item"><a class="nav-link {% navactive request 'holdfast:sov_adm' %}" href="{% url 'holdfast:sov_adm' %}">{% translate "ADM" %}</a></li>
+        <li class="nav-item"><a class="nav-link {% navactive request 'holdfast:sov_timers' %}" href="{% url 'holdfast:sov_timers' %}">{% translate "Timers" %}</a></li>
+    {% endif %}
+    <li class="nav-item"><a class="nav-link {% navactive request 'holdfast:sov_system_cost' %}" href="{% url 'holdfast:sov_system_cost' %}">{% translate "System Cost" %}</a></li>
+{% endblock %}
+
+{% block header_nav_collapse_right %}
+    {% if can_manage %}
+        <li class="nav-item"><a class="nav-link {% navactive request 'holdfast:sov_settings' %}" href="{% url 'holdfast:sov_settings' %}"><i class="fas fa-sliders-h"></i> {% translate "Settings" %}</a></li>
+    {% endif %}
+{% endblock %}
+
+{% block content %}<div class="holdfast mb-3">{% block holdfast_content %}{% endblock %}</div>{% endblock %}
+{% block extra_javascript %}<script src="{% static 'holdfast/holdfast.js' %}"></script>{% endblock %}

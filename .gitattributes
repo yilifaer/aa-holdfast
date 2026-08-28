@@ -1,0 +1,5 @@
+# Normalise line endings in the repository. Contributors on Windows keep CRLF
+# in their working copy; what gets committed is always LF.
+* text=auto eol=lf
+*.png binary
+*.jpg binary

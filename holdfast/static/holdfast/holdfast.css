@@ -1,0 +1,289 @@
+/*
+ * Styling for the SOV Monitor.
+ *
+ * Everything is expressed through Bootstrap 5 custom properties so the page
+ * follows whatever theme Alliance Auth is running -- the app never hard-codes
+ * a background or a text colour, only accents that read on both.
+ */
+
+/* ---------- severity accents ---------- */
+
+.holdfast {
+  --holdfast-ok: #2f9e44;
+  --holdfast-warning: #f08c00;
+  --holdfast-danger: #e03131;
+  --holdfast-critical: #c92a2a;
+  --holdfast-idle: var(--bs-secondary-color);
+}
+
+/* ---------- summary tiles ---------- */
+
+.holdfast-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.holdfast-tile {
+  border: 1px solid var(--bs-border-color);
+  border-left: 3px solid var(--holdfast-idle);
+  border-radius: var(--bs-border-radius);
+  padding: 0.75rem 0.9rem;
+  background: var(--bs-body-bg);
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.12s ease, transform 0.12s ease;
+}
+
+a.holdfast-tile:hover {
+  border-color: var(--bs-primary);
+  transform: translateY(-1px);
+}
+
+.holdfast-tile__label {
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--bs-secondary-color);
+}
+
+.holdfast-tile__value {
+  font-size: 1.75rem;
+  font-weight: 600;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+
+.holdfast-tile__note {
+  font-size: 0.78rem;
+  color: var(--bs-secondary-color);
+}
+
+.holdfast-tile--warning { border-left-color: var(--holdfast-warning); }
+.holdfast-tile--warning .holdfast-tile__value { color: var(--holdfast-warning); }
+.holdfast-tile--danger { border-left-color: var(--holdfast-danger); }
+.holdfast-tile--danger .holdfast-tile__value { color: var(--holdfast-danger); }
+.holdfast-tile--critical { border-left-color: var(--holdfast-critical); }
+.holdfast-tile--critical .holdfast-tile__value { color: var(--holdfast-critical); }
+.holdfast-tile--ok { border-left-color: var(--holdfast-ok); }
+
+/* ---------- attention feed ---------- */
+
+.holdfast-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.holdfast-item {
+  display: flex;
+  gap: 0.75rem;
+  align-items: baseline;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--bs-border-color);
+  border-left: 3px solid var(--holdfast-idle);
+  border-radius: var(--bs-border-radius);
+}
+
+.holdfast-item--warning { border-left-color: var(--holdfast-warning); }
+.holdfast-item--danger { border-left-color: var(--holdfast-danger); }
+.holdfast-item--critical { border-left-color: var(--holdfast-critical); }
+.holdfast-item--info { border-left-color: var(--bs-primary); }
+
+.holdfast-item__when {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.82rem;
+  color: var(--bs-secondary-color);
+  white-space: nowrap;
+  min-width: 7.5rem;
+}
+
+.holdfast-item__what { flex: 1 1 auto; }
+
+.holdfast-item__where {
+  font-weight: 600;
+}
+
+.holdfast-item__detail {
+  font-size: 0.85rem;
+  color: var(--bs-secondary-color);
+}
+
+/* Row severity: one marker down the left edge of the row, on the first cell
+   only. Applying it to every cell draws a stripe at each column boundary,
+   which reads as a row of meaningless bars rather than as one accent. */
+tr.holdfast-row--warning > td:first-child { box-shadow: inset 3px 0 0 var(--holdfast-warning); }
+tr.holdfast-row--danger > td:first-child { box-shadow: inset 3px 0 0 var(--holdfast-danger); }
+tr.holdfast-row--critical > td:first-child { box-shadow: inset 3px 0 0 var(--holdfast-critical); }
+tr.holdfast-row--warning > td:first-child,
+tr.holdfast-row--danger > td:first-child,
+tr.holdfast-row--critical > td:first-child { font-weight: 600; padding-left: 0.75rem; }
+
+/* ---------- table tools ---------- */
+
+.holdfast-tools {
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--bs-border-radius);
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.6rem 0.9rem;
+}
+
+/* Filters take the space they need; the search and page-size controls sit at
+   the far end of the same row rather than wrapping onto a line of their own. */
+.holdfast-tools__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 0.9rem;
+  align-items: flex-end;
+  flex: 1 1 auto;
+}
+
+.holdfast-tools__legend {
+  font-size: 0.74rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--bs-secondary-color);
+  font-weight: 600;
+  padding-bottom: 0.4rem;
+}
+
+.holdfast-tools__group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 7.5rem;
+}
+
+.holdfast-tools__label {
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--bs-secondary-color);
+}
+
+.holdfast-tools__bar {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-end;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.holdfast-tools__size { width: auto; min-width: 5rem; }
+
+.holdfast-tools__search {
+  width: 15rem;
+  max-width: 100%;
+}
+
+.holdfast-tools__footer {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+
+.holdfast-tools__count {
+  font-size: 0.8rem;
+  color: var(--bs-secondary-color);
+  font-variant-numeric: tabular-nums;
+}
+
+.holdfast-tools__pager {
+  display: flex;
+  gap: 0.25rem;
+  margin-left: auto;
+}
+
+/* Sortable headers. Literal glyphs, not CSS escapes: an escape has to survive
+   every tool that touches this file on the way to disk, and one of them ate
+   the backslash. */
+.holdfast table.table > thead th.holdfast-sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.holdfast table.table > thead th.holdfast-sortable::after {
+  content: " ⇅";
+  opacity: 0.3;
+  font-weight: 400;
+}
+
+.holdfast table.table > thead th.holdfast-sortable:hover { color: var(--bs-body-color); }
+.holdfast table.table > thead th.holdfast-sortable:hover::after { opacity: 0.7; }
+
+.holdfast table.table > thead th.is-sorted-asc::after { content: " ↑"; opacity: 1; }
+.holdfast table.table > thead th.is-sorted-desc::after { content: " ↓"; opacity: 1; }
+.holdfast table.table > thead th.is-sorted-asc,
+.holdfast table.table > thead th.is-sorted-desc { color: var(--bs-primary); }
+
+/* ---------- tables ---------- */
+
+.holdfast table.table {
+  font-variant-numeric: tabular-nums;
+}
+
+.holdfast table.table > thead th {
+  font-size: 0.74rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--bs-secondary-color);
+  font-weight: 600;
+  border-bottom-width: 1px;
+}
+
+.holdfast-num { text-align: right; }
+
+.holdfast-sub {
+  font-size: 0.8rem;
+  color: var(--bs-secondary-color);
+}
+
+/* ---------- den slots ---------- */
+
+.holdfast-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.holdfast-status::before {
+  content: "";
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: var(--holdfast-idle);
+}
+
+.holdfast-status--free::before { background: var(--holdfast-ok); }
+.holdfast-status--pending::before { background: var(--bs-primary); }
+.holdfast-status--assigned::before { background: var(--holdfast-warning); }
+.holdfast-status--anchored::before { background: var(--holdfast-ok); }
+.holdfast-status--hostile::before { background: var(--holdfast-danger); }
+
+.holdfast-section-title {
+  font-size: 0.78rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--bs-secondary-color);
+  font-weight: 600;
+  margin: 1.5rem 0 0.5rem;
+}
+
+.holdfast-empty {
+  padding: 1.5rem;
+  text-align: center;
+  color: var(--bs-secondary-color);
+  border: 1px dashed var(--bs-border-color);
+  border-radius: var(--bs-border-radius);
+}

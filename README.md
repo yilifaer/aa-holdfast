@@ -1,0 +1,302 @@
+# aa-holdfast
+
+Sovereignty Hub fuel and Orbital Skyhook monitoring for [Alliance Auth](https://gitlab.com/allianceauth/allianceauth), built on the Equinox ESI routes.
+
+## Why this exists
+
+CCP shipped ESI routes for sovereignty hubs and skyhooks on **2026-05-19**, but almost nobody built on them, because they are invisible unless you ask for them correctly:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" https://esi.evetech.net/skyhooks/raidable
+```
+
+That returns **404**. Add `-H "X-Compatibility-Date: 2026-05-19"` and it returns 200. The old `https://esi.evetech.net/latest/swagger.json` spec is gone (also 404), so anyone still generating a client from it sees none of this.
+
+`django-esi` 9.10+ handles the header for you and defaults to compatibility date `2026-08-18`, which is late enough. This app pins its own date in `holdfast/__init__.py`.
+
+## What it does
+
+One app, three doors. The sidebar carries **SOV Monitor**, **Skyhook Monitor** and **Den Monitor** as separate entries, because to the people using them they are three different jobs -- but they share a sync layer, a rate-limit budget and a set of tokens, which is exactly why they are not three apps.
+
+### SOV Monitor
+
+| Page | Source | Who sees it |
+|---|---|---|
+| Dashboard | everything below, worst first | officer |
+| Hub Fuel | `/corporations/{id}/structures/sovereignty-hubs{,/{id}}` | officer |
+| ADM | `/sovereignty/systems` | officer |
+| Timers | vulnerability windows, **only while one is running** | officer |
+| System Cost | `/industry/systems` | **any member** |
+| Settings | live thresholds and notification switches | manager |
+
+### Skyhook Monitor
+
+| Page | Source | Who sees it |
+|---|---|---|
+| Dashboard | everything stealable in the next 24 hours | officer |
+| Skyhooks | `/corporations/{id}/structures/skyhooks{,/{id}}`, **stealable only** | officer |
+| Timers | reinforcement, **only while one is running** | officer |
+| Raid Targets | `/skyhooks/raidable`, with real planet names | **any member** |
+| Settings | per-reagent bars, lead time, Discord switch | manager |
+
+Workforce and power skyhooks are left out of the list on purpose. They hold no stock and ESI gives them no theft window, so on a real 413-skyhook alliance including them means 362 rows of noise around the 51 that matter.
+
+### Den Monitor
+
+| Page | Shows | Who sees it |
+|---|---|---|
+| Dashboard | your dens; an officer also sees the alliance picture | member |
+| My Dens | your own dens, plus your contact details | **any member** |
+| Timers | your den clocks and recent events | **any member** |
+| Den List | which sites are free, and which are being siphoned -- **no holder names** | member |
+| Den Admin | holders, contacts, claim approvals, manual records | officer |
+| Settings | siphon sensitivity and notification switches | manager |
+
+The den list is deliberately anonymous. What every member needs is whether the ground is free and whether whatever sits on it is costing the alliance workforce; a directory of who farms where is a different thing, and it lives behind the officer tier.
+
+Every list filters instantly: a search box plus a dropdown per marked column, built from the values actually present. No dependency -- the biggest table here is a couple of hundred rows, and vendoring DataTables would only mean fighting the copies other Alliance Auth apps already ship.
+
+### Fuel maths
+
+The hub detail route returns, per reagent, `amount` and `burning_per_hour`, plus a `reagent_bay.last_updated` timestamp. Hours of fuel left is `amount / burning_per_hour`, counted **from `last_updated`**, not from when you made the request — the bay contents are a snapshot CCP caches for an hour. The hub's dry-out time is the earliest across all its reagents.
+
+`upgrades[].power_state` is the other half of the picture: `Low` means an upgrade is starved of fuel, power or workforce right now, which is a harder signal than a countdown.
+
+Three bands -- amber, red, critical -- are set in days in Django admin (**Holdfast -> Configuration**, default 7 / 3 / 1). They colour the dashboard *and* fire the Discord alerts from the same numbers, so the board and the channel can never disagree about what counts as urgent.
+
+## Requirements
+
+- Alliance Auth 4.6+
+- django-esi 9.10+ (needed for compatibility-date support)
+- django-eveuniverse, allianceauth-app-utils, dhooks-lite
+
+## Install
+
+```bash
+pip install -e /path/to/aa-holdfast
+```
+
+Add to `INSTALLED_APPS` in `myauth/settings/local.py`:
+
+```python
+INSTALLED_APPS += ["holdfast"]
+```
+
+Then:
+
+```bash
+python manage.py migrate
+python manage.py collectstatic --noinput
+supervisorctl restart myauth:
+```
+
+### Scheduled tasks
+
+Add to `local.py`.
+
+The owner task runs every 15 minutes, but each run only pulls the two listings plus `HOLDFAST_DETAIL_CALLS_PER_RUN` structure details, oldest first. Structures rotate through refresh rather than all being pulled at once — see [Rate limiting](#rate-limiting) for why that matters.
+
+```python
+CELERYBEAT_SCHEDULE["holdfast_update_all_owners"] = {
+    "task": "holdfast.tasks.update_all_owners",
+    "schedule": crontab(minute="7,22,37,52"),
+}
+CELERYBEAT_SCHEDULE["holdfast_update_sov_map"] = {
+    "task": "holdfast.tasks.update_sov_map",
+    "schedule": crontab(minute="*/15"),
+}
+CELERYBEAT_SCHEDULE["holdfast_refresh_raidable"] = {
+    "task": "holdfast.tasks.refresh_raidable",
+    "schedule": crontab(minute="*/10"),
+}
+CELERYBEAT_SCHEDULE["holdfast_run_alerts"] = {
+    "task": "holdfast.tasks.run_alerts",
+    "schedule": crontab(minute="*/10"),
+}
+CELERYBEAT_SCHEDULE["holdfast_prune_alert_log"] = {
+    "task": "holdfast.tasks.prune_alert_log",
+    "schedule": crontab(minute=40, hour=4),
+}
+CELERYBEAT_SCHEDULE["holdfast_update_all_den_characters"] = {
+    "task": "holdfast.tasks.update_all_den_characters",
+    "schedule": crontab(minute="3,23,43"),
+}
+CELERYBEAT_SCHEDULE["holdfast_sync_den_slots"] = {
+    "task": "holdfast.tasks.sync_den_slots",
+    "schedule": crontab(minute=15),
+}
+# Runs just after the owner sync so it reads fresh workforce numbers.
+CELERYBEAT_SCHEDULE["holdfast_track_workforce"] = {
+    "task": "holdfast.tasks.track_workforce",
+    "schedule": crontab(minute="12,27,42,57"),
+}
+```
+
+## Rate limiting
+
+Each hub and each skyhook needs its own detail call. The `corp-structure` bucket allows **300 requests per 15 minutes per token**, and that bucket is shared with any other app using the same character — `aa-structures`, for instance.
+
+A real alliance corporation can hold 150+ structures, so refreshing everything every run exhausts the bucket and leaves rows stale with no way to tell which ones. Instead:
+
+1. Both listings are pulled every run (2 calls). They are complete, so they decide what exists — creating rows for new structures and deleting departed ones.
+2. A fixed budget of detail calls is spent on the structures whose details are stalest.
+
+At the default 50 calls per run on a 15-minute schedule, a 150-structure corporation refreshes fully about every 45 minutes — inside the hour CCP caches these routes for anyway — using roughly a fifth of the bucket. Structures awaiting their first detail pull show as *queued* in the UI.
+
+If `ESIBucketLimitException` is raised mid-run anyway (because another app drained the bucket), the run stops cleanly and the owner is marked with a note; the next run continues from where it left off.
+
+## Registering corporations
+
+**These are corporation endpoints, not alliance endpoints.** A token only ever covers the corporation its character belongs to, and the character must hold the in-game **Station Manager** role. An alliance executor's token does not reach member corporations — every member corp that holds hubs or skyhooks needs to register its own token on the Owners page.
+
+The public ADM page is the exception: it covers every system your alliance holds whether or not that corporation has registered.
+
+## Permissions
+
+Each section has its own ladder, and holding a higher rung implies the lower ones -- a manager never needs the officer permission granted alongside.
+
+| Section | Member | Officer | Manager |
+|---|---|---|---|
+| Sovereignty | `sov_basic` | `sov_officer` | `sov_manage` |
+| Skyhooks | `skyhook_basic` | `skyhook_officer` | `skyhook_manage` |
+| Dens | `den_basic`, then `den_member` | `den_officer` | `den_manage` |
+
+Plus two that cut across: `den_claim` to apply for a den site, and `manage_owners` to register tokens.
+
+Scope is separate from tier. An officer sees the registered corporations in **their own alliance**, not everything on the server, so one install can serve several alliances without mixing them up.
+
+### Give the member tier to a State, not a group
+
+The three `*_basic` permissions cover the pages any member should have: system
+cost, raid targets, and their own dens. Attach them to your **Member state**
+(Django admin -> Authentication -> States) rather than to a group. A state
+follows alliance or corporation membership, so people get these the moment they
+join and lose them the moment they leave -- nobody requests anything and nobody
+has to be pruned later.
+
+Leave the `Blue` and `Guest` states without any of them: everything above the
+member tier is your own sovereignty data.
+
+A suggested layout for the rest:
+
+| Group | Permissions |
+|---|---|
+| Alliance leadership | `sov_manage`, `skyhook_manage`, `den_manage`, `den_claim`, `manage_owners` |
+| Officers / FCs | `sov_officer`, `skyhook_officer`, `den_officer`, `den_claim` |
+| Den operators (request to join) | `den_basic`, `den_member`, `den_claim` |
+
+**`den_claim` needs `den_member` beside it.** `den_claim` only permits the
+action; the Den List is where the claim button lives, and that page is gated by
+`den_member`. A group holding one without the other looks like it can claim a
+site and cannot reach the page to do it.
+
+### Settings live in the app, not in Django admin
+
+Each section has its own settings page behind its `*_manage` permission, so an alliance's SOV manager can retune fuel bands without a Django superuser account. Django admin still works for anything else.
+
+## Mercenary dens
+
+**Every den route in ESI is character scoped.** There is no corporation or public equivalent, and no notification type for "somebody anchored a den next to your skyhook". That shapes the whole feature:
+
+- **Our own dens** fill in automatically, but only from each operator's own token.
+- **Anyone else's den** is invisible to ESI and gets recorded by hand.
+- **The only automatic tell** that a hostile den exists is its side effect: from anarchy level 2 it siphons the workforce of the skyhook it is attached to, so a sustained shortfall against that skyhook's own historic peak is worth a warning.
+
+### Slots and claims
+
+Dens anchor within 10 km of a skyhook, and only on **temperate** planets, so the set of possible den sites is exactly the set of temperate-planet skyhooks you hold. Those become slots automatically; nobody maintains a list.
+
+A slot moves through **free -> claim pending -> assigned -> anchored**, or **hostile** when someone else got there first.
+
+1. A member joins the *Den Operators* group through Alliance Auth's normal group request.
+2. They claim a free slot. The claim goes through EVE SSO up front, so an approved claim is live immediately rather than waiting on someone to come back and authorise.
+3. A den manager approves. Approving one applicant automatically rejects everyone else queued on that slot.
+4. Once anchored, the den's development level, anarchy level, state and reinforcement timer appear on the Dens page and the dashboard.
+
+An approved claim with nothing anchored after `den_anchor_grace_days` is flagged in the UI. It is never revoked automatically -- that is a manager's call.
+
+### Den events
+
+Three things can happen to a den, and each has exactly one authoritative source. They are deliberately not cross-wired, or every event would fire twice:
+
+| Event | Source | Why |
+|---|---|---|
+| Under attack now | `MercenaryDenAttacked` notification | The den route carries no HP; this is the only signal |
+| Reinforced | den route, `state == Paused` | Survives notification roll-off; the notification is recorded silently |
+| New tactical operation | MTO route, `state == Available` | Carries the expiry and dungeon type the notification lacks |
+
+EVE stores notifications server-side, so nothing is missed while an operator is logged out. Operators authorise three scopes at claim time -- `esi-structures.read_character.v1`, `esi-activities.read_character.v1` and `esi-characters.read_notifications.v1` -- all at once, because adding a scope later means making every operator re-authorise.
+
+## Alerts
+
+Create a webhook in Django admin (*Holdfast → Webhooks*) with a Discord channel webhook URL, then:
+
+```bash
+python manage.py holdfast_test_webhook
+```
+
+Five checks run on the alert task:
+
+- **Sov hub fuel** — fires as a hub crosses each configured band (default 7 / 3 / 1 days). Refuelling moves the predicted dry-out time, which re-arms every band.
+- **Unpowered upgrades** — edge-triggered when any upgrade goes `Low`, re-armed once it recovers.
+- **Skyhook theft window** — fires `HOLDFAST_SKYHOOK_THEFT_LEAD_MINUTES` before an owned skyhook becomes lootable, but only once some reagent on it clears that reagent's own bar (see below).
+- **Skyhook under attack** — edge-triggered on entering a reinforced state.
+- **Low ADM** — edge-triggered below `HOLDFAST_ADM_ALERT_THRESHOLD`.
+- **Den under attack** — from the notification, the only source for "being shot right now".
+- **Den reinforced** — edge-triggered from the den route.
+- **Tactical operation available** — with its expiry.
+- **Workforce shortfall** — a skyhook sitting below its own peak for longer than the grace period, with no den of ours on it. Suppressed when we already know what is there.
+
+Every alert is deduplicated through the `AlertLog` table, so a repeating sync never re-sends a warning you have already seen. Nothing is recorded as sent unless a webhook actually accepted it — otherwise a backlog raised before any webhook existed would be swallowed and never reappear.
+
+### Per-reagent theft thresholds
+
+Reagents are not worth the same trip. On a real alliance's skyhooks the two differ by an order of magnitude:
+
+| Reagent | Skyhooks holding unsecured stock | Max | Median |
+|---|---|---|---|
+| Magmatic Gas | 23 | 175,644 | 30,780 |
+| Superionic Ice | 7 | 10,296 | 3,840 |
+
+One global number cannot serve both, so each reagent gets its own bar, editable in Django admin under **Holdfast → Reagent alert thresholds** (`/admin/holdfast/reagentthreshold/`). The list view is editable in place — change the number, hit Save.
+
+A row is created automatically the first time a reagent is seen on a skyhook, seeded from `HOLDFAST_SKYHOOK_MIN_UNSECURED`. Unchecking *is enabled* silences that reagent entirely. Reagents with no row fall back to the setting.
+
+## Settings
+
+All optional; defaults shown.
+
+```python
+HOLDFAST_ESI_COMPATIBILITY_DATE = "2026-08-18"   # must be >= 2026-05-19
+HOLDFAST_FUEL_ALERT_THRESHOLDS = [48, 24, 6]     # hours of fuel left
+HOLDFAST_SKYHOOK_THEFT_LEAD_MINUTES = 45
+HOLDFAST_SKYHOOK_MIN_UNSECURED = 100              # fallback only; see per-reagent bars
+HOLDFAST_DETAIL_CALLS_PER_RUN = 50               # per owner, per sync run
+HOLDFAST_DEN_DETAIL_CALLS_PER_RUN = 10           # per den operator, per sync run
+HOLDFAST_DEN_NOTIFICATION_MAX_AGE_HOURS = 24     # ignore older ones on first sync
+HOLDFAST_ADM_ALERT_THRESHOLD = 3.0               # None disables
+HOLDFAST_TRACK_EXTRA_ALLIANCE_IDS = []           # extra alliances for the ADM page
+HOLDFAST_RAIDABLE_CACHE_SECONDS = 300
+HOLDFAST_OWNER_SYNC_JITTER_SECONDS = 300
+HOLDFAST_STALE_PRUNE_DAYS = 14
+```
+
+## Commands
+
+```bash
+python manage.py holdfast_update              # full sync in the foreground
+python manage.py holdfast_update --owner 1    # one corporation
+python manage.py holdfast_update --skip-alerts --skip-public
+python manage.py holdfast_test_webhook
+```
+
+## Notes on behaviour
+
+- `django-esi` raises `HTTPNotModified` when an ETag matches but its response cache has expired. That is normal and every call site here treats it as "nothing changed", not as an error.
+- Planets are not bulk-imported by django-eveuniverse, so each new skyhook costs one extra ESI call to resolve its planet name. The result is stored permanently, so it happens once per skyhook, ever.
+- Only systems held by a tracked alliance are stored from the sovereignty map. Keeping all 5485 would mean pointless disk churn.
+- The raidable list lives in Redis rather than the database — ~200 rows that turn over every few minutes.
+
+## Relationship to aa-structures
+
+`aa-structures` parses in-game Skyhook *notifications* (deployed / lost shields / destroyed) to build timers. It does not use the ESI structure routes, so it cannot see fuel levels, reagent stock or theft windows. The two apps complement each other: aa-structures tells you a hook was attacked, this one tells you it is about to run dry or be looted.

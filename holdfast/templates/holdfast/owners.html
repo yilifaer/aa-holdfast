@@ -1,0 +1,79 @@
+{% extends "holdfast/base.html" %}
+{% load i18n %}
+
+{% block holdfast_content %}
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="mb-0">{% translate "Registered corporations" %}</h4>
+        <div>
+            <a class="btn btn-primary" href="{% url 'holdfast:add_owner' %}">
+                <i class="fas fa-plus"></i> {% translate "Add corporation" %}
+            </a>
+            <a class="btn btn-outline-primary" href="{% url 'holdfast:add_den_character' %}">
+                <i class="fas fa-plus"></i> {% translate "Add den character" %}
+            </a>
+        </div>
+    </div>
+
+    <div class="alert alert-secondary">
+        {% blocktranslate %}Each corporation needs its own token, from a character holding the in-game <strong>Station Manager</strong> role. A token only ever covers the corporation that character belongs to -- an alliance executor token does not cover member corporations.{% endblocktranslate %}
+    </div>
+
+    {% if not owners %}
+        <div class="alert alert-info">{% translate "No corporations registered yet." %}</div>
+    {% else %}
+        <div class="table-responsive">
+            <table class="table table-sm align-middle" data-filterable
+                   data-filter-placeholder="{% translate 'Search corporations…' %}">
+                <thead>
+                    <tr>
+                        <th>{% translate "Corporation" %}</th>
+                        <th>{% translate "Alliance" %}</th>
+                        <th>{% translate "Token character" %}</th>
+                        <th>{% translate "Enabled" %}</th>
+                        <th>{% translate "Last sync" %}</th>
+                        <th>{% translate "Result" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for owner in owners %}
+                        <tr>
+                            <td>{{ owner.corporation.corporation_name }}</td>
+                            <td class="small">{{ owner.corporation.alliance.alliance_name|default:"-" }}</td>
+                            <td class="small">
+                                {% if owner.character_ownership %}
+                                    {{ owner.character_ownership.character.character_name }}
+                                {% else %}
+                                    <span class="text-danger">{% translate "none" %}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if owner.is_enabled %}
+                                    <span class="badge text-bg-success">{% translate "yes" %}</span>
+                                {% else %}
+                                    <span class="badge text-bg-secondary">{% translate "no" %}</span>
+                                {% endif %}
+                            </td>
+                            <td class="small">
+                                {% if owner.last_sync_at %}
+                                    {{ owner.last_sync_at|date:"Y-m-d H:i" }} UTC
+                                {% else %}
+                                    <span class="text-body-secondary">{% translate "never" %}</span>
+                                {% endif %}
+                            </td>
+                            <td class="small">
+                                {% if owner.last_sync_ok %}
+                                    <span class="badge text-bg-success">{% translate "OK" %}</span>
+                                {% elif owner.last_sync_at %}
+                                    <span class="badge text-bg-danger">{% translate "failed" %}</span>
+                                    <div class="text-danger">{{ owner.last_error }}</div>
+                                {% else %}
+                                    <span class="text-body-secondary">-</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+{% endblock %}

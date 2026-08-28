@@ -1,0 +1,122 @@
+{% extends "holdfast/den/base.html" %}
+{% load i18n %}
+{% load humanize %}
+
+{% block holdfast_content %}
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="mb-0">{% translate "Your mercenary dens" %}</h5>
+        <a class="btn btn-primary btn-sm" href="{% url 'holdfast:add_den_character' %}">
+            <i class="fas fa-plus"></i> {% translate "Register a character" %}
+        </a>
+    </div>
+
+    <div class="alert alert-secondary py-2 holdfast-sub">
+        {% blocktranslate %}Den data is character-scoped in ESI &mdash; there is no corporation-wide view &mdash; so each character you run a den on has to be authorised once. You can do it here or through charlink.{% endblocktranslate %}
+    </div>
+
+    {% if not dens %}
+        <div class="holdfast-empty">{% translate "No dens yet. Register a character above, or claim a slot from the den list." %}</div>
+    {% else %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle" data-filterable
+                   data-filter-placeholder="{% translate 'Search…' %}">
+                <thead>
+                    <tr>
+                        <th data-filter="{% translate 'Planet' %}">{% translate "Planet" %}</th>
+                        <th data-filter="{% translate 'System' %}">{% translate "System" %}</th>
+                        <th data-filter="{% translate 'Character' %}">{% translate "Character" %}</th>
+                        <th data-filter="{% translate 'State' %}">{% translate "State" %}</th>
+                        <th class="holdfast-num">{% translate "Development" %}</th>
+                        <th class="holdfast-num">{% translate "Anarchy" %}</th>
+                        <th class="holdfast-num">{% translate "Infomorphs" %}</th>
+                        <th>{% translate "Reinforcement" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for den in dens %}
+                        <tr class="{% if den.state == 'Paused' %}holdfast-row--critical{% elif den.state == 'Disabled' %}holdfast-row--warning{% endif %}">
+                            <td>{{ den.planet_name }}</td>
+                            <td><a href="https://evemaps.dotlan.net/system/{{ den.system_name }}" target="_blank" rel="noopener">{{ den.system_name }}</a></td>
+                            <td class="holdfast-sub">{{ den.eve_character }}</td>
+                            <td>
+                                <span class="badge {% if den.state == 'Running' %}text-bg-success{% elif den.state == 'Paused' %}text-bg-danger{% else %}text-bg-secondary{% endif %}">{{ den.get_state_display }}</span>
+                            </td>
+                            <td class="holdfast-num">{{ den.development_number }}</td>
+                            <td class="holdfast-num">
+                                {{ den.anarchy_number }}
+                                {% if den.is_siphoning %}<span class="badge text-bg-warning">{% translate "siphoning" %}</span>{% endif %}
+                            </td>
+                            <td class="holdfast-num">{{ den.infomorphs|intcomma }}</td>
+                            <td class="holdfast-sub">{% if den.reinforce_end %}{{ den.reinforce_end|date:"m-d H:i" }} UTC{% else %}&mdash;{% endif %}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <p class="holdfast-sub">{% translate "From anarchy level 2 a den starts siphoning the workforce of the skyhook it sits on. That is visible to the alliance, so keep an eye on it." %}</p>
+    {% endif %}
+
+    {% if claims %}
+        <div class="holdfast-section-title">{% translate "Your slot claims" %}</div>
+        <table class="table table-sm align-middle" data-filterable
+               data-filter-placeholder="{% translate 'Search claims…' %}">
+            <tbody>
+                {% for claim in claims %}
+                    <tr>
+                        <td>{{ claim.slot.planet_name }}</td>
+                        <td class="holdfast-sub">{{ claim.character.character_name }}</td>
+                        <td>
+                            <span class="badge {% if claim.status == 'approved' %}text-bg-success{% elif claim.status == 'pending' %}text-bg-primary{% else %}text-bg-secondary{% endif %}">{{ claim.get_status_display }}</span>
+                        </td>
+                        <td class="holdfast-sub">{{ claim.decision_note }}</td>
+                        <td class="text-end">
+                            {% if claim.is_open %}
+                                <form method="post" action="{% url 'holdfast:den_withdraw_claim' claim.pk %}">
+                                    {% csrf_token %}
+                                    <button class="btn btn-sm btn-outline-secondary">{% translate "Withdraw" %}</button>
+                                </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% endif %}
+
+    {% if characters %}
+        <div class="holdfast-section-title">{% translate "How managers reach you" %}</div>
+        <div class="alert alert-secondary py-2 holdfast-sub">
+            {% translate "One answer for you, not one per character. Alliance Auth has no timezone of its own, so pick your rough region here; den managers see it next to your characters and Discord name so they know when you are likely awake." %}
+        </div>
+        <form method="post" action="{% url 'holdfast:den_save_contact' %}" class="row g-2 align-items-end mb-2">
+            {% csrf_token %}
+            <div class="col-md-3">
+                <label class="form-label holdfast-sub">{% translate "Your characters" %}</label>
+                <select class="form-select form-select-sm" disabled>
+                    {% for den_character in characters %}
+                        <option>{{ den_character }}</option>
+                    {% endfor %}
+                </select>
+                <div class="form-text">{% translate "All of them share these details." %}</div>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label holdfast-sub" for="tz">{% translate "Timezone" %}</label>
+                <select name="timezone" id="tz" class="form-select form-select-sm">
+                    <option value="">{% translate "not set" %}</option>
+                    {% for code, label in timezones %}
+                        <option value="{{ code }}" {% if code == operator.timezone %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label holdfast-sub" for="note">{% translate "Note" %}</label>
+                <input name="contact_note" id="note" class="form-control form-control-sm"
+                       value="{{ operator.contact_note }}"
+                       placeholder="{% translate 'Best times to reach you, alt names, anything useful' %}">
+            </div>
+            <div class="col-md-2">
+                <button class="btn btn-sm btn-outline-primary w-100">{% translate "Save" %}</button>
+            </div>
+        </form>
+    {% endif %}
+{% endblock %}

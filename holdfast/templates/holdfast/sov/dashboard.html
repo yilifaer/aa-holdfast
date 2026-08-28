@@ -1,0 +1,30 @@
+{% extends "holdfast/sov/base.html" %}
+{% load i18n %}
+
+{% block holdfast_content %}
+    <div class="holdfast-tiles">
+        <div class="holdfast-tile {% if critical_count %}holdfast-tile--critical{% elif item_count %}holdfast-tile--warning{% else %}holdfast-tile--ok{% endif %}">
+            <div class="holdfast-tile__label">{% translate "Needs attention" %}</div>
+            <div class="holdfast-tile__value">{{ item_count }}</div>
+            <div class="holdfast-tile__note">{{ critical_count }} {% translate "critical" %}</div>
+        </div>
+        <a class="holdfast-tile {% if fuel_danger %}holdfast-tile--danger{% elif fuel_warning %}holdfast-tile--warning{% endif %}" href="{% url 'holdfast:sov_fuel' %}">
+            <div class="holdfast-tile__label">{% translate "Sov hubs" %}</div>
+            <div class="holdfast-tile__value">{{ hub_count }}</div>
+            <div class="holdfast-tile__note">{{ fuel_danger }} {% translate "red" %}, {{ fuel_warning }} {% translate "amber" %}</div>
+        </a>
+        <a class="holdfast-tile {% if reinforced_count %}holdfast-tile--critical{% endif %}" href="{% url 'holdfast:sov_timers' %}">
+            <div class="holdfast-tile__label">{% translate "Reinforced" %}</div>
+            <div class="holdfast-tile__value">{{ reinforced_count }}</div>
+            <div class="holdfast-tile__note">{% translate "defence event running" %}</div>
+        </a>
+        <a class="holdfast-tile {% if vulnerable_count %}holdfast-tile--warning{% endif %}" href="{% url 'holdfast:sov_timers' %}">
+            <div class="holdfast-tile__label">{% translate "Attackable now" %}</div>
+            <div class="holdfast-tile__value">{{ vulnerable_count }}</div>
+            <div class="holdfast-tile__note">{% translate "vulnerability window open" %}</div>
+        </a>
+    </div>
+
+    <div class="holdfast-section-title">{% translate "What wants attention" %}</div>
+    {% include "holdfast/partials/_feed.html" with empty_message=_("No hub is low on fuel, no upgrade is down, and no ADM is under the bar.") %}
+{% endblock %}

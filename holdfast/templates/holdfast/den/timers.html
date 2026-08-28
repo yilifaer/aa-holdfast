@@ -1,0 +1,67 @@
+{% extends "holdfast/den/base.html" %}
+{% load i18n %}
+
+{% block holdfast_content %}
+    {% if can_view_all %}
+        <div class="mb-3">
+            <a class="btn btn-sm {% if not scope_all %}btn-primary{% else %}btn-outline-secondary{% endif %}" href="?">{% translate "Mine" %}</a>
+            <a class="btn btn-sm {% if scope_all %}btn-primary{% else %}btn-outline-secondary{% endif %}" href="?scope=all">{% translate "Everyone" %}</a>
+        </div>
+    {% endif %}
+
+    <div class="holdfast-section-title">{% translate "On the clock" %}</div>
+    {% if not entries %}
+        <div class="holdfast-empty">{% translate "Nothing running: no den reinforced, no operation pending." %}</div>
+    {% else %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle" data-filterable
+                   data-filter-placeholder="{% translate 'Search…' %}">
+                <thead>
+                    <tr>
+                        <th>{% translate "When (UTC)" %}</th>
+                        <th data-filter="{% translate 'Type' %}">{% translate "What" %}</th>
+                        <th data-filter="{% translate 'Planet' %}">{% translate "Planet" %}</th>
+                        <th>{% translate "System" %}</th>
+                        <th>{% translate "Detail" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for entry in entries %}
+                        <tr>
+                            <td class="text-nowrap">{{ entry.when|date:"Y-m-d H:i" }}</td>
+                            <td>{{ entry.kind }}</td>
+                            <td>{{ entry.where }}</td>
+                            <td>
+                                {% if entry.system %}
+                                    <a href="https://evemaps.dotlan.net/system/{{ entry.system }}" target="_blank" rel="noopener">{{ entry.system }}</a>
+                                {% else %}&mdash;{% endif %}
+                            </td>
+                            <td class="holdfast-sub">{{ entry.detail }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+
+    <div class="holdfast-section-title">{% translate "Recent events" %}</div>
+    {% if not events %}
+        <div class="holdfast-empty">{% translate "Nothing in the last seven days." %}</div>
+    {% else %}
+        <div class="holdfast-feed">
+            {% for event in events %}
+                <div class="holdfast-item {% if event.kind == 'MercenaryDenAttacked' %}holdfast-item--critical{% else %}holdfast-item--info{% endif %}">
+                    <div class="holdfast-item__when">{{ event.timestamp|date:"m-d H:i" }} UTC</div>
+                    <div class="holdfast-item__what">
+                        <span class="holdfast-item__where">{{ event.den.planet_name|default:_("unknown planet") }}</span>
+                        &nbsp;&middot;&nbsp;{{ event.get_kind_display }}
+                        <div class="holdfast-item__detail">{{ event.den_character }}</div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+        <p class="holdfast-sub mt-2">
+            {% translate "EVE stores notifications server-side, so nothing is missed while you are logged out. Reinforcement and tactical operations come from their own routes instead, which survive notifications rolling off the list." %}
+        </p>
+    {% endif %}
+{% endblock %}

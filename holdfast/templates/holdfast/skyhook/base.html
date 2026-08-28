@@ -1,0 +1,27 @@
+{% extends 'allianceauth/base-bs5.html' %}
+{% load i18n %}
+{% load static %}
+{% load navactive %}
+
+{% block page_title %}{% translate "Skyhook Monitor" %}{% endblock %}
+{% block header_nav_brand %}{% translate "Skyhook Monitor" %}{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{% static 'holdfast/holdfast.css' %}">{% endblock %}
+
+{% block header_nav_collapse_left %}
+    {% if can_view_all %}
+        <li class="nav-item"><a class="nav-link {% navactive request 'holdfast:skyhook_dashboard' %}" href="{% url 'holdfast:skyhook_dashboard' %}">{% translate "Dashboard" %}</a></li>
+        <li class="nav-item"><a class="nav-link {% navactive request 'holdfast:skyhook_list' %}" href="{% url 'holdfast:skyhook_list' %}">{% translate "Skyhooks" %}</a></li>
+        <li class="nav-item"><a class="nav-link {% navactive request 'holdfast:skyhook_timers' %}" href="{% url 'holdfast:skyhook_timers' %}">{% translate "Timers" %}</a></li>
+    {% endif %}
+    <li class="nav-item"><a class="nav-link {% navactive request 'holdfast:skyhook_raid' %}" href="{% url 'holdfast:skyhook_raid' %}">{% translate "Raid Targets" %}</a></li>
+{% endblock %}
+
+{% block header_nav_collapse_right %}
+    {% if can_manage %}
+        <li class="nav-item"><a class="nav-link {% navactive request 'holdfast:skyhook_settings' %}" href="{% url 'holdfast:skyhook_settings' %}"><i class="fas fa-sliders-h"></i> {% translate "Settings" %}</a></li>
+    {% endif %}
+{% endblock %}
+
+{% block content %}<div class="holdfast mb-3">{% block holdfast_content %}{% endblock %}</div>{% endblock %}
+{% block extra_javascript %}<script src="{% static 'holdfast/holdfast.js' %}"></script>{% endblock %}
