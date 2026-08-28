@@ -21,7 +21,7 @@ from datetime import timedelta
 from django.db import transaction
 from django.utils import timezone
 from esi.exceptions import HTTPNotModified
-from eveuniverse.models import EvePlanet, EveType
+from eveuniverse.models import EvePlanet
 
 from ..app_settings import (
     HOLDFAST_DEN_DETAIL_CALLS_PER_RUN,
@@ -136,7 +136,7 @@ def sync_den_listing(den_character: DenCharacter, token, planet_memo) -> int:
     return len(seen)
 
 
-def refresh_den_details(den_character: DenCharacter, token, budget, type_memo) -> int:
+def refresh_den_details(den_character: DenCharacter, token, budget) -> int:
     refreshed = 0
     stalest = MercenaryDen.objects.filter(den_character=den_character).order_by(
         "detail_updated_at"
@@ -146,7 +146,7 @@ def refresh_den_details(den_character: DenCharacter, token, budget, type_memo) -
             break
         budget -= 1
         try:
-            _fetch_den_detail(den_character, token, den, type_memo)
+            _fetch_den_detail(den_character, token, den)
         except ESIBucketLimitException:
             logger.warning("%s: den bucket exhausted", den_character)
             break
@@ -154,7 +154,7 @@ def refresh_den_details(den_character: DenCharacter, token, budget, type_memo) -
     return refreshed
 
 
-def _fetch_den_detail(den_character, token, den, type_memo):
+def _fetch_den_detail(den_character, token, den):
     try:
         detail = esi.client.Structures.GetCharactersStructuresMercenaryDensDetail(
             mercenary_den_id=den.den_id,
@@ -197,7 +197,7 @@ def _fetch_den_detail(den_character, token, den, type_memo):
 # --------------------------------------------------------------------------
 
 
-def sync_operations(den_character: DenCharacter, token, type_memo) -> int:
+def sync_operations(den_character: DenCharacter, token) -> int:
     """Pull MTOs. One listing call plus one detail call per operation.
 
     A character can hold at most five dens, so this stays tiny.
@@ -236,10 +236,10 @@ def sync_operations(den_character: DenCharacter, token, type_memo) -> int:
                 "den_character": den_character,
                 "den": MercenaryDen.objects.filter(den_id=den_id).first(),
                 "mercenary_den_id": den_id,
+                # Stored raw: dungeon ids are not inventory type ids, and
+                # resolving one against the type tables produces a confident
+                # wrong answer rather than an empty one.
                 "dungeon_type_id": dungeon_type_id,
-                "eve_type": _resolve_type(dungeon_type_id, type_memo)
-                if dungeon_type_id
-                else None,
                 "state": data.get("state") or "Unspecified",
                 "expires": data.get("expires"),
                 "updated_at": timezone.now(),
@@ -387,14 +387,13 @@ def track_workforce_high_water() -> dict:
 def update_den_character(den_character: DenCharacter) -> dict:
     """Refresh one operator's dens, operations and notifications."""
     token = den_character.fetch_token()
-    type_memo: dict = {}
     planet_memo: dict = {}
 
     dens = sync_den_listing(den_character, token, planet_memo)
     details = refresh_den_details(
-        den_character, token, HOLDFAST_DEN_DETAIL_CALLS_PER_RUN, type_memo
+        den_character, token, HOLDFAST_DEN_DETAIL_CALLS_PER_RUN
     )
-    operations = sync_operations(den_character, token, type_memo)
+    operations = sync_operations(den_character, token)
     events = sync_notifications(den_character, token)
 
     return {
@@ -410,17 +409,6 @@ def update_den_character(den_character: DenCharacter) -> dict:
 # private helpers.
 # --------------------------------------------------------------------------
 
-
-def _resolve_type(type_id, memo):
-    if type_id in memo:
-        return memo[type_id]
-    try:
-        eve_type, _ = EveType.objects.get_or_create_esi(id=type_id)
-    except Exception:  # noqa: BLE001
-        logger.warning("Could not resolve type %s", type_id, exc_info=True)
-        eve_type = None
-    memo[type_id] = eve_type
-    return eve_type
 
 
 def _resolve_planet(planet_id, memo):

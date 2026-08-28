@@ -25,6 +25,11 @@ All notable changes to this project are documented here. The format follows
   already keep one in a spreadsheet, and typing it back one slot at a time
   through the web form is a poor use of an evening. Rows whose planet does not
   match a slot are reported rather than guessed at.
+- An operator's own dashboard now carries their tactical operations and, when
+  one of their dens has reached anarchy 2, the workforce it is taking off the
+  ground it sits on. Both also count towards the sidebar badge.
+- Attention feed timestamps show how far away a moment is alongside the EVE
+  time, rather than the absolute time alone.
 - Workforce siphon detection. An untouched skyhook reports a workforce figure
   that is a round multiple of ten; a den takes a percentage and leaves one that
   usually is not. This needs no history, so it catches dens that were already
@@ -41,3 +46,13 @@ All notable changes to this project are documented here. The format follows
 - Requires ESI compatibility date 2026-05-19 or later. The sovereignty hub and
   skyhook routes do not exist before it, and ESI answers 404 rather than
   telling you why.
+
+### Fixed
+
+- Tactical operations in the `Started` state were dropped from the dashboard
+  and the badge, which counted only `Available` ones -- so a member who had
+  actually begun an operation saw "All clear" until it expired.
+- Operations no longer claim a name they do not have. `dungeon_type_id`
+  indexes dungeons, not inventory types, so resolving it produced whatever
+  item shared the number: 12367 came back as the skill "Explosive Shield
+  Compensation".

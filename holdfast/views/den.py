@@ -99,6 +99,34 @@ def dashboard(request):
                 }
             )
 
+    # A den at anarchy 2 or above starts taking workforce from the skyhook it
+    # sits on, and on our own ground that lands on our own sovereignty. The
+    # operator is the one person who can do something about it, so tell them
+    # here rather than only on the officer board.
+    for den in mine:
+        if not den.is_siphoning:
+            continue
+        skyhook = den.slot.skyhook if den.slot else None
+        taken = skyhook.siphoned_amount if skyhook else None
+        percent = skyhook.workforce_siphon_percent if skyhook else None
+        items.append(
+            {
+                "severity": "warning",
+                "when": None,
+                "kind": "Your den is taking our own workforce",
+                "where": den.planet_name,
+                "system": den.system_name,
+                "detail": (
+                    f"anarchy {den.anarchy_number} -- "
+                    + (
+                        f"{percent:.0f}% of this skyhook, {taken:,} a cycle"
+                        if percent and taken
+                        else "the skyhook under it is losing output"
+                    )
+                ),
+            }
+        )
+
     for event in DenEvent.objects.filter(
         den_character__in=own_den_characters(request.user),
         kind=DenEvent.Kind.ATTACKED,
@@ -115,20 +143,31 @@ def dashboard(request):
             }
         )
 
+    # Both live states count. "Started" is not finished -- it is an operation
+    # already running against a clock, which is if anything more urgent than
+    # one nobody has picked up yet.
     for operation in MercenaryTacticalOperation.objects.filter(
         den_character__in=own_den_characters(request.user),
-        state=MercenaryTacticalOperation.State.AVAILABLE,
-    ).select_related("den__eve_planet", "eve_type"):
+        state__in=(
+            MercenaryTacticalOperation.State.AVAILABLE,
+            MercenaryTacticalOperation.State.STARTED,
+        ),
+    ).select_related("den__eve_planet", "den__eve_solar_system"):
         if operation.expires and operation.expires < now:
             continue
+        soon = operation.expires and operation.expires < now + timedelta(hours=24)
+        started = operation.state == MercenaryTacticalOperation.State.STARTED
         items.append(
             {
-                "severity": "info",
+                "severity": "warning" if soon else "info",
                 "when": operation.expires,
-                "kind": "Tactical operation available",
+                "kind": "Tactical operation running"
+                if started
+                else "Tactical operation available",
                 "where": operation.den.planet_name if operation.den else "?",
                 "system": operation.den.system_name if operation.den else None,
-                "detail": operation.type_name,
+                "detail": operation.type_name
+                + (" -- started, not finished" if started else " -- not started yet"),
             }
         )
 
@@ -236,7 +275,7 @@ def timers(request):
     )
     events = DenEvent.objects.select_related("den__eve_planet", "den_character")
     operations = MercenaryTacticalOperation.objects.select_related(
-        "den__eve_planet", "eve_type", "den_character"
+        "den__eve_planet", "den__eve_solar_system", "den_character"
     )
     if not scope_all:
         dens = dens.filter(den_character__in=characters)

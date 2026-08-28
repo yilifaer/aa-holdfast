@@ -1124,9 +1124,6 @@ class MercenaryTacticalOperation(models.Model):
     mercenary_den_id = models.BigIntegerField(db_index=True)
 
     dungeon_type_id = models.BigIntegerField(null=True, blank=True)
-    eve_type = models.ForeignKey(
-        EveType, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
-    )
     state = models.CharField(
         max_length=12, choices=State.choices, default=State.UNSPECIFIED, db_index=True
     )
@@ -1142,7 +1139,17 @@ class MercenaryTacticalOperation(models.Model):
 
     @property
     def type_name(self) -> str:
-        return self.eve_type.name if self.eve_type else str(self.dungeon_type_id)
+        """What kind of operation this is, as far as ESI will say.
+
+        ``dungeon_type_id`` indexes dungeons, not inventory types, so looking
+        it up in the type tables returns whatever unrelated item happens to
+        share the number -- 12367 comes back as the skill "Explosive Shield
+        Compensation". There is no route that names a dungeon, so the number
+        is reported as a number rather than dressed up as a wrong name.
+        """
+        if self.dungeon_type_id is None:
+            return "unknown operation"
+        return f"Operation #{self.dungeon_type_id}"
 
     @property
     def is_actionable(self) -> bool:

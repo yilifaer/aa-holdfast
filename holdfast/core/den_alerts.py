@@ -174,7 +174,7 @@ def check_mto_available() -> int:
     now = timezone.now()
     operations = MercenaryTacticalOperation.objects.filter(
         state=MercenaryTacticalOperation.State.AVAILABLE
-    ).select_related("den__eve_planet", "den__eve_solar_system", "eve_type", "den_character")
+    ).select_related("den__eve_planet", "den__eve_solar_system", "den_character")
 
     for operation in operations:
         if operation.expires and operation.expires < now:

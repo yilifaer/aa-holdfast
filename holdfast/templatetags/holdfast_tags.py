@@ -1,6 +1,25 @@
 from django import template
+from django.utils import timezone
+from django.utils.timesince import timesince, timeuntil
+from django.utils.translation import gettext_lazy as _
 
 register = template.Library()
+
+
+@register.filter
+def relative_moment(value):
+    """"in 2 days" or "3 hours ago", whichever way the moment points.
+
+    Shown next to the absolute EVE time rather than instead of it: the
+    relative figure is what someone reads at a glance, the absolute one is
+    what they type into a fleet ping.
+    """
+    if not value:
+        return ""
+    now = timezone.now()
+    if value >= now:
+        return _("in %(delta)s") % {"delta": timeuntil(value, now)}
+    return _("%(delta)s ago") % {"delta": timesince(value, now)}
 
 
 @register.filter

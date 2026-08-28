@@ -2,7 +2,7 @@
 Attention feed. Every section builds the same shape of item so the three
 dashboards read identically: severity, when, where, what, detail.
 {% endcomment %}
-{% load i18n %}
+{% load i18n holdfast_tags %}
 
 {% if not items %}
     <div class="holdfast-empty">
@@ -14,7 +14,10 @@ dashboards read identically: severity, when, where, what, detail.
         {% for item in items %}
             <div class="holdfast-item holdfast-item--{{ item.severity }}">
                 <div class="holdfast-item__when">
-                    {% if item.when %}{{ item.when|date:"m-d H:i" }} UTC{% else %}&mdash;{% endif %}
+                    {% if item.when %}
+                        <div class="holdfast-item__when-relative">{{ item.when|relative_moment }}</div>
+                        <div>{{ item.when|date:"m-d H:i" }} EVE</div>
+                    {% else %}&mdash;{% endif %}
                 </div>
                 <div class="holdfast-item__what">
                     <span class="holdfast-item__where">

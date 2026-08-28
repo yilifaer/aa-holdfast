@@ -122,3 +122,131 @@ class DenSlotStatusTests(TestCase):
             user=user, character=character, owner_hash="test-owner-hash"
         )
         return DenCharacter.objects.create(character_ownership=ownership)
+
+
+class OperationAttentionTests(TestCase):
+    """An operation on your own den has to reach you.
+
+    It expires on a clock whether or not anyone logs in, and the first version
+    of this counted only operations in the ``Available`` state -- so a member
+    who had actually started one saw "All clear" until it ran out.
+    """
+
+    def setUp(self):
+        from django.contrib.auth.models import Permission, User
+        from django.core.cache import cache
+
+        from ..models import DenCharacter, MercenaryDen
+
+        cache.clear()
+        corporation = EveCorporationInfo.objects.create(
+            corporation_id=98000003,
+            corporation_name="Golden Fleece",
+            corporation_ticker="GF",
+            member_count=10,
+        )
+        owner = Owner.objects.create(corporation=corporation)
+        skyhook = Skyhook.objects.create(
+            skyhook_id=1_000_000_000_002,
+            owner=owner,
+            planet_id=40_000_002,
+            effective_workforce=7812,
+        )
+        self.slot = DenSlot.objects.create(skyhook=skyhook)
+
+        from allianceauth.authentication.models import CharacterOwnership
+        from allianceauth.eveonline.models import EveCharacter
+
+        self.user = User.objects.create_user("operator2")
+        self.user.user_permissions.add(
+            Permission.objects.get(
+                content_type__app_label="holdfast", codename="den_basic"
+            )
+        )
+        self.user = User.objects.get(pk=self.user.pk)  # drop the perm cache
+        ownership = CharacterOwnership.objects.create(
+            user=self.user,
+            character=EveCharacter.objects.create(
+                character_id=90000002,
+                character_name="operator two",
+                corporation_id=98000003,
+                corporation_name="Golden Fleece",
+                corporation_ticker="GF",
+            ),
+            owner_hash="test-owner-hash-2",
+        )
+        self.den_character = DenCharacter.objects.create(character_ownership=ownership)
+        self.den = MercenaryDen.objects.create(
+            den_id=2_000_000_000_003,
+            den_character=self.den_character,
+            planet_id=skyhook.planet_id,
+            skyhook_id=skyhook.skyhook_id,
+            slot=self.slot,
+            state=MercenaryDen.State.RUNNING,
+        )
+
+    def _count(self):
+        from django.core.cache import cache
+
+        from ..core.attention import den_count
+
+        cache.clear()
+        return den_count(self.user)
+
+    def _operation(self, state, hours):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from ..models import MercenaryTacticalOperation
+
+        return MercenaryTacticalOperation.objects.create(
+            operation_id=f"op-{state}-{hours}",
+            den_character=self.den_character,
+            den=self.den,
+            mercenary_den_id=self.den.den_id,
+            dungeon_type_id=12367,
+            state=state,
+            expires=timezone.now() + timedelta(hours=hours),
+        )
+
+    def test_a_running_den_with_nothing_on_it_is_quiet(self):
+        self.assertEqual(self._count(), 0)
+
+    def test_both_live_states_count(self):
+        from ..models import MercenaryTacticalOperation
+
+        for state in (
+            MercenaryTacticalOperation.State.AVAILABLE,
+            MercenaryTacticalOperation.State.STARTED,
+        ):
+            with self.subTest(state=state):
+                MercenaryTacticalOperation.objects.all().delete()
+                self._operation(state, 48)
+                self.assertEqual(self._count(), 1)
+
+    def test_finished_and_expired_operations_do_not_count(self):
+        from ..models import MercenaryTacticalOperation
+
+        self._operation(MercenaryTacticalOperation.State.COMPLETED, 48)
+        self._operation(MercenaryTacticalOperation.State.STARTED, -1)
+        self.assertEqual(self._count(), 0)
+
+    def test_a_siphoning_den_of_your_own_counts(self):
+        """Anarchy 2 is where a den starts taking from the ground under it."""
+        from ..models import EvolutionLevel
+
+        self.den.anarchy_level = EvolutionLevel.L2
+        self.den.save()
+        self.assertEqual(self._count(), 1)
+
+        self.den.anarchy_level = EvolutionLevel.L1
+        self.den.save()
+        self.assertEqual(self._count(), 0)
+
+    def test_an_operation_is_named_by_its_number_not_a_wrong_name(self):
+        """dungeon_type_id indexes dungeons, so the type tables lie about it."""
+        from ..models import MercenaryTacticalOperation
+
+        operation = self._operation(MercenaryTacticalOperation.State.STARTED, 48)
+        self.assertEqual(operation.type_name, "Operation #12367")

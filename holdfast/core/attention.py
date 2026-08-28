@@ -16,7 +16,9 @@ from ..models import (
     DenClaim,
     DenEvent,
     DenSlot,
+    EvolutionLevel,
     MercenaryDen,
+    MercenaryTacticalOperation,
     PowerState,
     ReagentThreshold,
     Skyhook,
@@ -29,6 +31,14 @@ from ..models import (
 logger = logging.getLogger(__name__)
 
 CACHE_SECONDS = 60
+
+# A den starts siphoning its skyhook at anarchy level 2. Spelled out as levels
+# rather than derived per row so the count stays a single indexed query.
+SIPHONING_LEVELS = (
+    EvolutionLevel.L2,
+    EvolutionLevel.L3,
+    EvolutionLevel.L4,
+)
 
 
 def _cached(section, user, builder):
@@ -152,6 +162,25 @@ def den_count(user) -> int:
             den_character__character_ownership__user=user,
             kind=DenEvent.Kind.ATTACKED,
             timestamp__gte=now - timedelta(hours=24),
+        ).count()
+
+        # An operation on one of your own dens is the most ordinary thing this
+        # section has to tell a member, and it expires whether or not they log
+        # in. Both live states count; an expired one is nobody's problem.
+        total += MercenaryTacticalOperation.objects.filter(
+            den_character__character_ownership__user=user,
+            state__in=(
+                MercenaryTacticalOperation.State.AVAILABLE,
+                MercenaryTacticalOperation.State.STARTED,
+            ),
+        ).exclude(expires__lt=now).count()
+
+        # Your own den eating our own workforce. The officer board counts these
+        # too, further down; for an operator it is the one item here they can
+        # act on themselves.
+        total += mine.filter(
+            anarchy_level__in=SIPHONING_LEVELS,
+            slot__isnull=False,
         ).count()
 
         if den_can_view_all(user):

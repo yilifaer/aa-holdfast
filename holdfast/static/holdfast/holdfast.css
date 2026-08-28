@@ -97,7 +97,14 @@ a.holdfast-tile:hover {
   font-size: 0.82rem;
   color: var(--bs-secondary-color);
   white-space: nowrap;
-  min-width: 7.5rem;
+  min-width: 9rem;
+}
+
+/* The line people actually read. The absolute EVE time under it stays in the
+   muted colour, since it is there to be copied rather than scanned. */
+.holdfast-item__when-relative {
+  color: var(--bs-body-color);
+  font-weight: 600;
 }
 
 .holdfast-item__what { flex: 1 1 auto; }
