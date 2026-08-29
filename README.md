@@ -4,15 +4,14 @@
 [![PyPI](https://img.shields.io/pypi/v/aa-holdfast)](https://pypi.org/project/aa-holdfast/)
 [![Python](https://img.shields.io/pypi/pyversions/aa-holdfast)](https://pypi.org/project/aa-holdfast/)
 [![License](https://img.shields.io/badge/license-GPLv3-blue)](https://github.com/yilifaer/aa-holdfast/blob/main/LICENSE)
+[![Alliance Auth Apps](https://img.shields.io/badge/Alliance%20Auth-app%20directory-2C3E50)](https://apps.allianceauth.org/apps/detail/aa-holdfast)
 
 
 Sovereignty Hub fuel and Orbital Skyhook monitoring for [Alliance Auth](https://gitlab.com/allianceauth/allianceauth), built on the Equinox ESI routes.
 
 ![Sovereignty hub fuel](https://raw.githubusercontent.com/yilifaer/aa-holdfast/main/docs/images/sov-fuel.png)
 
-<sub>Every screenshot here comes from a demo install seeded with invented
-systems, corporations and characters. Fuel timers and den holders are
-intelligence, and a real one does not belong in a public README.</sub>
+*Every screenshot here comes from a demo install seeded with invented systems, corporations and characters. Fuel timers and den holders are intelligence, and a real one does not belong in a public README.*
 
 
 ## Why this exists
@@ -44,17 +43,13 @@ One app, three doors. The sidebar carries **SOV Monitor**, **Skyhook Monitor** a
 
 ![Sovereignty timers](https://raw.githubusercontent.com/yilifaer/aa-holdfast/main/docs/images/sov-timers.png)
 
-<sub>The hub detail route carries no state field, so a running Entosis defence
-event is the only public evidence that one is actually being attacked. Green is
-safe, amber is inside its daily window, red has a campaign against it.</sub>
+*The hub detail route carries no state field, so a running Entosis defence event is the only public evidence that one is actually being attacked. Green is safe, amber is inside its daily window, red has a campaign against it.*
 
 ### Skyhook Monitor
 
 ![Skyhook dashboard](https://raw.githubusercontent.com/yilifaer/aa-holdfast/main/docs/images/skyhook-dashboard.png)
 
-<sub>Theft windows inside the configured horizon, amber where a reagent is
-over its bar. The feed underneath is the same data ordered by what happens
-next.</sub>
+*Theft windows inside the configured horizon, amber where a reagent is over its bar. The feed underneath is the same data ordered by what happens next.*
 
 | Page | Source | Who sees it |
 |---|---|---|
@@ -70,9 +65,7 @@ Workforce and power skyhooks are left out of the list on purpose. They hold no s
 
 ![Den admin](https://raw.githubusercontent.com/yilifaer/aa-holdfast/main/docs/images/den-admin.png)
 
-<sub>Two dens the app can see and two free sites. `auto` came from a token,
-`manual` from somebody typing it. `measured` and `inferred` are the two
-siphon detectors, and the difference between them is how sure they are.</sub>
+*Two dens the app can see and two free sites. `auto` came from a token, `manual` from somebody typing it. `measured` and `inferred` are the two siphon detectors, and the difference between them is how sure they are.*
 
 | Page | Shows | Who sees it |
 |---|---|---|
@@ -310,12 +303,7 @@ EVE stores notifications server-side, so nothing is missed while an operator is 
 
 ![A siphon alert in Discord](https://raw.githubusercontent.com/yilifaer/aa-holdfast/main/docs/images/discord-alert.png)
 
-<sub>Every moment appears three times: how far away it is, the reader's own
-local time, and EVE time. Discord renders the first two in each viewer's
-language and timezone -- which is why they are in Chinese above and will not be
-for you -- while the third is the same for everyone, and is the one you paste
-into a fleet ping. <b>How we know</b> is there because the two siphon detectors
-are not equally sure of themselves.</sub>
+*Every moment appears three times: how far away it is, the reader's own local time, and EVE time. Discord renders the first two in each viewer's language and timezone -- which is why they are in Chinese above and will not be for you -- while the third is the same for everyone, and is the one you paste into a fleet ping. **How we know** is there because the two siphon detectors are not equally sure of themselves.*
 
 Create a webhook in Django admin (*Holdfast → Webhooks*) with a Discord channel webhook URL, then:
 

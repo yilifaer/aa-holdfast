@@ -4,6 +4,29 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses
 [semantic versioning](https://semver.org/).
 
+## [0.1.5] - 2026-08-30
+
+Documentation only. No behaviour changes; upgrading is optional.
+
+### Fixed
+
+- Image captions used `<sub>` tags. GitHub and PyPI render raw HTML in a
+  README; the Alliance Auth app directory does not, and printed the tags
+  themselves. They are italic now, which says the same thing in all three.
+
+### Added
+
+- A badge linking to this app's entry in the Alliance Auth app directory, and
+  an icon under `docs/images/`.
+
+### Notes
+
+- The app directory shows this package's licence as `?`. That is not a
+  metadata error: `pyproject.toml` declares a PEP 639 licence expression
+  (`GPL-3.0-or-later`), and setuptools refuses outright to also carry the
+  superseded `License ::` classifier that older tooling reads. PyPI reports
+  the expression correctly.
+
 ## [0.1.4] - 2026-08-30
 
 Documentation only. No behaviour changes; upgrading is optional.
