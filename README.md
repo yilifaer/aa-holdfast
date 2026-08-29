@@ -92,70 +92,44 @@ supervisorctl restart myauth:
 
 ### Scheduled tasks
 
-Add to `local.py`.
-
-The owner task runs every 15 minutes, but each run only pulls the two listings plus `HOLDFAST_DETAIL_CALLS_PER_RUN` structure details, oldest first. Structures rotate through refresh rather than all being pulled at once — see [Rate limiting](#rate-limiting) for why that matters.
+Eleven of them. Merge the shipped schedule into `local.py` rather than pasting
+the entries by hand -- leaving one out does not fail loudly, it quietly removes
+a feature:
 
 ```python
-CELERYBEAT_SCHEDULE["holdfast_update_all_owners"] = {
-    "task": "holdfast.tasks.update_all_owners",
-    "schedule": crontab(minute="7,22,37,52"),
-}
-CELERYBEAT_SCHEDULE["holdfast_update_sov_map"] = {
-    "task": "holdfast.tasks.update_sov_map",
-    "schedule": crontab(minute="*/15"),
-}
-CELERYBEAT_SCHEDULE["holdfast_refresh_raidable"] = {
-    "task": "holdfast.tasks.refresh_raidable",
-    "schedule": crontab(minute="*/10"),
-}
-CELERYBEAT_SCHEDULE["holdfast_run_alerts"] = {
-    "task": "holdfast.tasks.run_alerts",
-    "schedule": crontab(minute="*/10"),
-}
-CELERYBEAT_SCHEDULE["holdfast_prune_alert_log"] = {
-    "task": "holdfast.tasks.prune_alert_log",
-    "schedule": crontab(minute=40, hour=4),
-}
-CELERYBEAT_SCHEDULE["holdfast_update_all_den_characters"] = {
-    "task": "holdfast.tasks.update_all_den_characters",
-    "schedule": crontab(minute="3,23,43"),
-}
-CELERYBEAT_SCHEDULE["holdfast_sync_den_slots"] = {
-    "task": "holdfast.tasks.sync_den_slots",
-    "schedule": crontab(minute=15),
-}
-# Runs just after the owner sync so it reads fresh workforce numbers.
-CELERYBEAT_SCHEDULE["holdfast_track_workforce"] = {
-    "task": "holdfast.tasks.track_workforce",
-    "schedule": crontab(minute="12,27,42,57"),
-}
-# Skyhook listings return a planet id and nothing else. Naming them costs one
-# universe call each, so it runs on its own rather than turning a two-call
-# listing sync into a several-minute crawl.
-CELERYBEAT_SCHEDULE["holdfast_resolve_planets"] = {
-    "task": "holdfast.tasks.resolve_planets",
-    "schedule": crontab(minute="9,24,39,54"),
-}
-# Public route, one call per region, cached an hour their side.
-CELERYBEAT_SCHEDULE["holdfast_update_system_costs"] = {
-    "task": "holdfast.tasks.update_system_costs",
-    "schedule": crontab(minute=35),
-}
-# Entosis campaigns: public, cached five seconds. This is the only public
-# evidence that a sovereignty hub has been reinforced -- the hub detail route
-# has no state field -- so without it the timer board never turns red.
-CELERYBEAT_SCHEDULE["holdfast_update_campaigns"] = {
-    "task": "holdfast.tasks.update_campaigns",
-    "schedule": crontab(minute="*/5"),
-}
+from holdfast.schedule import CELERYBEAT_SCHEDULE as HOLDFAST_SCHEDULE
+
+CELERYBEAT_SCHEDULE.update(HOLDFAST_SCHEDULE)
 ```
 
-All eleven belong in `local.py`; `crontab` comes from `celery.schedules`, which
-an Alliance Auth `local.py` already imports. Leaving one out does not break the
-app, it quietly removes a feature: without `resolve_planets` every list shows
-bare planet ids, without `update_system_costs` the cost page stays empty, and
-without `update_campaigns` the timer board never shows a reinforced hub.
+Retune any single entry afterwards if you want to:
+
+```python
+CELERYBEAT_SCHEDULE["holdfast_update_all_owners"]["schedule"] = crontab(minute="*/30")
+```
+
+The minute offsets in the shipped schedule are deliberate. The owner task runs
+every 15 minutes and each run pulls two listings plus
+`HOLDFAST_DETAIL_CALLS_PER_RUN` structure details, oldest first, so structures
+rotate through refresh rather than all being pulled at once -- see
+[Rate limiting](#rate-limiting) for why that matters. `track_workforce` follows
+five minutes behind it so it reads numbers that were just refreshed, and the
+rest are spread across the hour so they do not all reach for the same rate-limit
+bucket at once.
+
+| Task | Runs | What stops working without it |
+|---|---|---|
+| `update_all_owners` | `7,22,37,52` | Everything. Hubs and skyhooks never sync |
+| `track_workforce` | `12,27,42,57` | No siphon detection against a skyhook's own peak |
+| `resolve_planets` | `9,24,39,54` | Every list shows bare planet ids |
+| `update_sov_map` | `*/15` | The ADM board stays empty |
+| `update_system_costs` | `:35` | The system cost page stays empty |
+| `refresh_raidable` | `*/10` | The raid target page waits on ESI, or stays empty |
+| `update_campaigns` | `*/5` | The timer board never shows a reinforced hub |
+| `update_all_den_characters` | `3,23,43` | Dens, operations and attack notifications never arrive |
+| `sync_den_slots` | `:15` | New temperate-planet skyhooks never become claimable slots |
+| `run_alerts` | `*/10` | Nothing is ever posted to Discord |
+| `prune_alert_log` | `04:40` | The alert log grows forever |
 
 ## Rate limiting
 

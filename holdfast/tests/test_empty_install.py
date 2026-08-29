@@ -115,3 +115,72 @@ class EmptyInstallTests(TestCase):
         for counter in (sov_count, skyhook_count, den_count):
             with self.subTest(counter=counter.__name__):
                 self.assertEqual(counter(self.user), 0)
+
+
+class ScheduleTests(TestCase):
+    """The shipped schedule has to name tasks that exist.
+
+    A schedule entry pointing at a task path that has been renamed does not
+    fail at startup; Celery logs it once, at a level nobody is reading, and the
+    feature is simply absent. This is the cheapest place to catch that.
+    """
+
+    def test_every_scheduled_task_can_be_imported(self):
+        import importlib
+
+        from ..schedule import CELERYBEAT_SCHEDULE
+
+        for name, entry in CELERYBEAT_SCHEDULE.items():
+            with self.subTest(entry=name):
+                module_path, _, function = entry["task"].rpartition(".")
+                module = importlib.import_module(module_path)
+                self.assertTrue(
+                    hasattr(module, function),
+                    f"{name} points at {entry['task']}, which does not exist",
+                )
+
+    # Fanned out one row at a time by the "_all_" task above them, so they are
+    # deliberately absent from the schedule. Listed here rather than inferred,
+    # so that adding a task and forgetting to schedule it is a failure and not
+    # a shrug.
+    DISPATCHED_NOT_SCHEDULED = {"update_owner", "update_den_character"}
+
+    def test_the_schedule_covers_every_task_the_app_defines(self):
+        """A task nobody schedules is a feature nobody gets."""
+        from .. import tasks
+        from ..schedule import CELERYBEAT_SCHEDULE
+
+        scheduled = {
+            entry["task"].rpartition(".")[2] for entry in CELERYBEAT_SCHEDULE.values()
+        }
+        defined = {
+            name
+            for name in dir(tasks)
+            if not name.startswith("_")
+            and hasattr(getattr(tasks, name), "delay")  # a Celery task
+        }
+        self.assertEqual(
+            defined - scheduled - self.DISPATCHED_NOT_SCHEDULED,
+            set(),
+            "these tasks exist but nothing in the shipped schedule runs them",
+        )
+
+    def test_the_dispatched_tasks_really_are_dispatched(self):
+        """Otherwise the exemption above turns into a place to hide things."""
+        import inspect
+
+        from .. import tasks
+
+        source = inspect.getsource(tasks)
+        for name in self.DISPATCHED_NOT_SCHEDULED:
+            with self.subTest(task=name):
+                # Either dispatch form counts. These go out through
+                # apply_async so each row can carry its own countdown.
+                dispatched = f"{name}.delay(" in source or f"{name}.apply_async(" in source
+                self.assertTrue(dispatched, f"{name} is exempt but never dispatched")
+
+    def test_entry_names_are_prefixed_so_they_cannot_collide(self):
+        from ..schedule import CELERYBEAT_SCHEDULE
+
+        for name in CELERYBEAT_SCHEDULE:
+            self.assertTrue(name.startswith("holdfast_"), name)
