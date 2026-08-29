@@ -176,9 +176,19 @@ bucket at once.
 
 Each hub and each skyhook needs its own detail call, and ESI meters those in
 tokens rather than requests: a `2xx` costs **two**, a `304` costs **one**. The
-`corp-structure` bucket holds **300 tokens per 15 minutes**, keyed on
-application and character together, so it is shared with any other app your
-users have authorised the same character to — `aa-structures`, for instance.
+`corp-structure` bucket holds **300 tokens per 15 minutes**, and CCP keys it on
+**application and character together**.
+
+The application is the EVE SSO application, and an Alliance Auth install has
+exactly one of those — the `ESI_SSO_CLIENT_ID` in `local.py`, which every
+module on the site authenticates through. So the bucket is shared with every
+*other Auth module on your own install* that touches the same character's
+token: `aa-structures`, `aa-moonmining`, `corptools`. It is **not** shared with
+somebody else's Auth, or with a third-party tool the same character has
+authorised — those have their own client ids and their own buckets.
+
+Which is the useful half: when this app reports being rate limited, the cause
+is inside your install and you can do something about it.
 
 Counting calls and calling them tokens is how the first release ended up
 spending two thirds of the bucket while its own comments claimed one third.
@@ -191,7 +201,7 @@ A real alliance corporation can hold 150+ structures, so refreshing everything e
 At the default 60 calls per run on a 15-minute schedule, a 150-structure
 corporation refreshes fully in about 40 minutes — inside the hour CCP caches
 these routes for anyway. The worst case is `60 x 2 + 2 x 2 = 124` tokens, or
-**41%** of the bucket, leaving the rest for everything else sharing it.
+**41%** of the bucket, leaving the rest for the other modules on your site.
 Structures awaiting their first detail pull show as *queued* in the UI.
 
 Both listings and the details come out of one queue ordered by staleness. An

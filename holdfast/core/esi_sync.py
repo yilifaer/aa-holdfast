@@ -5,7 +5,11 @@ routes used are the Equinox ones that only exist from compatibility date
 2026-05-19 onward; see ``holdfast.providers`` for how that date gets sent.
 
 **Rate limiting shapes the design.** The ``corp-structure`` bucket allows 300
-requests per 15 minutes per token, and a detail call is needed per structure.
+tokens per 15 minutes -- a successful call costs two of them, a 304 costs one --
+and a detail call is needed per structure. CCP keys the bucket on application
+and character together, and an Auth install has one ESI application shared by
+every module on it, so the budget here is really a share of what this site's
+other apps leave behind.
 A large alliance corporation can easily hold 150 hubs and skyhooks, so a naive
 "refresh everything, every run" sync blows the budget and leaves half the rows
 stale with no way to tell which half.
@@ -20,8 +24,8 @@ Instead each run does two things:
 
 Structures therefore rotate through refresh. With the default budget and a
 15-minute schedule, every structure is refreshed comfortably inside the one
-hour that CCP caches these routes for anyway, at about a fifth of the rate
-limit -- leaving room for other apps sharing the same token's bucket.
+hour that CCP caches these routes for anyway, at about 41% of the bucket --
+leaving the rest for the other Auth modules using the same character.
 """
 
 import logging

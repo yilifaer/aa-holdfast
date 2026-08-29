@@ -37,8 +37,8 @@ HOLDFAST_RAIDABLE_CACHE_SECONDS = _setting("HOLDFAST_RAIDABLE_CACHE_SECONDS", 30
 
 # Detail calls per owner per run. ESI charges two rate-limit tokens for a
 # successful response, so 60 calls is about 120 tokens of the 300-per-15-
-# minutes corporation bucket -- leaving most of it for the other apps that
-# share it. The old default of 100 was chosen when a call was believed to
+# minutes corporation bucket -- leaving most of it for the other Auth modules
+# on this site, which share the bucket because they share the ESI application. The old default of 100 was chosen when a call was believed to
 # cost one token, and spent two thirds of the bucket rather than one third.
 HOLDFAST_DETAIL_CALLS_PER_RUN = _setting("HOLDFAST_DETAIL_CALLS_PER_RUN", 60)
 
