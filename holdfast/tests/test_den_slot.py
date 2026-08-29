@@ -395,3 +395,84 @@ class ClaimLifecycleTests(TestCase):
         )
 
         self.assertFalse(self.slot.awaiting_removal)
+
+
+class FirstSyncWindowTests(TestCase):
+    """The first thing that happens to a new operator's den must still reach them.
+
+    Suppressing every notification on an operator's first sync kept days of
+    history out of Discord, and took the live event with it -- the one they
+    registered to hear about.
+    """
+
+    def setUp(self):
+        from allianceauth.authentication.models import CharacterOwnership
+        from allianceauth.eveonline.models import EveCharacter
+        from django.contrib.auth.models import User
+
+        from ..models import DenCharacter
+
+        user = User.objects.create_user("operator3")
+        ownership = CharacterOwnership.objects.create(
+            user=user,
+            character=EveCharacter.objects.create(
+                character_id=90000003,
+                character_name="operator three",
+                corporation_id=98000006,
+                corporation_name="Golden Fleece",
+                corporation_ticker="GF",
+            ),
+            owner_hash="test-owner-hash-3",
+        )
+        self.den_character = DenCharacter.objects.create(character_ownership=ownership)
+
+    def _cutoff(self):
+        """The cutoff sync_notifications would compute for this operator."""
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from ..app_settings import (
+            HOLDFAST_DEN_FIRST_SYNC_GRACE_MINUTES,
+            HOLDFAST_DEN_NOTIFICATION_MAX_AGE_HOURS,
+        )
+        from ..models import DenEvent
+
+        now = timezone.now()
+        cutoff = now - timedelta(hours=HOLDFAST_DEN_NOTIFICATION_MAX_AGE_HOURS)
+        if not DenEvent.objects.filter(den_character=self.den_character).exists():
+            cutoff = max(
+                cutoff,
+                now - timedelta(minutes=HOLDFAST_DEN_FIRST_SYNC_GRACE_MINUTES),
+            )
+        return now, cutoff
+
+    def test_an_attack_happening_now_survives_the_first_sync(self):
+        now, cutoff = self._cutoff()
+        self.assertLess(cutoff, now, "a live event must fall inside the window")
+
+    def test_yesterdays_history_is_still_suppressed_on_a_first_sync(self):
+        from datetime import timedelta
+
+        now, cutoff = self._cutoff()
+        self.assertGreater(
+            cutoff, now - timedelta(hours=3), "first sync must stay a narrow window"
+        )
+
+    def test_the_window_widens_once_the_operator_has_history(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from ..models import DenEvent
+
+        DenEvent.objects.create(
+            notification_id=123456,
+            den_character=self.den_character,
+            kind=DenEvent.Kind.ATTACKED,
+            timestamp=timezone.now(),
+        )
+        now, cutoff = self._cutoff()
+        self.assertLess(
+            cutoff, now - timedelta(hours=3), "an established operator gets the full age"
+        )

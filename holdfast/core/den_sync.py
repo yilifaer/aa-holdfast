@@ -24,6 +24,7 @@ from eveuniverse.models import EvePlanet
 
 from ..app_settings import (
     HOLDFAST_DEN_DETAIL_CALLS_PER_RUN,
+    HOLDFAST_DEN_FIRST_SYNC_GRACE_MINUTES,
     HOLDFAST_DEN_NOTIFICATION_MAX_AGE_HOURS,
     HOLDFAST_DEN_NOTIFICATION_TYPES,
 )
@@ -275,8 +276,17 @@ def sync_notifications(den_character: DenCharacter, token) -> int:
         logger.warning("%s: notification bucket exhausted", den_character)
         return 0
 
-    cutoff = timezone.now() - timedelta(hours=HOLDFAST_DEN_NOTIFICATION_MAX_AGE_HOURS)
-    first_sync = not DenEvent.objects.filter(den_character=den_character).exists()
+    now = timezone.now()
+    cutoff = now - timedelta(hours=HOLDFAST_DEN_NOTIFICATION_MAX_AGE_HOURS)
+    if not DenEvent.objects.filter(den_character=den_character).exists():
+        # First sync for this operator. Suppressing *everything* here was too
+        # blunt: the first thing that happens to a new operator's den is
+        # precisely what they registered to hear about, and it was the one
+        # event guaranteed to be swallowed. Narrow the window instead of
+        # closing it.
+        cutoff = max(
+            cutoff, now - timedelta(minutes=HOLDFAST_DEN_FIRST_SYNC_GRACE_MINUTES)
+        )
 
     created = 0
     for item in result:
@@ -300,9 +310,9 @@ def sync_notifications(den_character: DenCharacter, token) -> int:
                 "kind": kind,
                 "timestamp": timestamp,
                 "text": text[:4000],
-                # On a character's very first sync, backfill history silently
-                # rather than replaying days of it into Discord.
-                "is_alerted": first_sync or timestamp < cutoff,
+                # Older than the window is backfill: recorded for the
+                # timeline, never announced.
+                "is_alerted": timestamp < cutoff,
             },
         )
         created += int(was_created)

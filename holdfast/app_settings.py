@@ -90,6 +90,14 @@ HOLDFAST_DEN_NOTIFICATION_TYPES = [
 
 # Ignore notifications older than this on first sync, so registering a
 # character does not replay months of history into Discord.
+# An operator's very first sync must not replay days of history into Discord,
+# but it must not swallow an attack happening right now either -- which is
+# exactly when a new operator is most likely to be registering. Anything newer
+# than this on a first sync is treated as live.
+HOLDFAST_DEN_FIRST_SYNC_GRACE_MINUTES = _setting(
+    "HOLDFAST_DEN_FIRST_SYNC_GRACE_MINUTES", 90
+)
+
 HOLDFAST_DEN_NOTIFICATION_MAX_AGE_HOURS = _setting(
     "HOLDFAST_DEN_NOTIFICATION_MAX_AGE_HOURS", 24
 )
