@@ -987,6 +987,44 @@ class DenSlot(models.Model):
         return None
 
     @property
+    def holder_source(self) -> str:
+        """Where the name came from: a token, a person, or nowhere."""
+        if self.anchored_den:
+            return "auto"
+        if self.approved_claim:
+            return "approved"
+        if self.recorded_den:
+            return "manual"
+        return ""
+
+    @property
+    def holder_label(self) -> str:
+        """"name -- corporation (auto)", for the pings and the boards.
+
+        One string, built in one place, so an alert and a table cannot end up
+        describing the same slot differently. How we know matters as much as
+        who it is: a token keeps itself current, a hand record does not.
+        """
+        name = self.holder_name
+        if not name:
+            return "unknown"
+        corporation = self.holder_corporation
+        source = self.holder_source
+        label = f"{name} -- {corporation}" if corporation else name
+        return f"{label} ({source})" if source else label
+
+    @property
+    def awaiting_removal(self) -> bool:
+        """Approval was taken back but the den is still standing.
+
+        Revoking a claim does not unanchor anything -- only the operator can
+        do that -- so the slot has to keep saying so until they have.
+        """
+        if not self.anchored_den or self.approved_claim:
+            return False
+        return self.claims.filter(status=DenClaim.Status.REVOKED).exists()
+
+    @property
     def is_overdue(self) -> bool:
         """Approved, but nothing anchored inside the grace period."""
         claim = self.approved_claim
@@ -1004,6 +1042,9 @@ class DenClaim(models.Model):
         APPROVED = "approved", "Approved"
         REJECTED = "rejected", "Rejected"
         WITHDRAWN = "withdrawn", "Withdrawn"
+        # Granted and then taken back. Distinct from rejected, which was never
+        # granted: a revoked claim usually means a den has to come down.
+        REVOKED = "revoked", "Revoked"
 
     slot = models.ForeignKey(DenSlot, on_delete=models.CASCADE, related_name="claims")
     user = models.ForeignKey(
@@ -1030,6 +1071,11 @@ class DenClaim(models.Model):
     )
     decision_note = models.TextField(blank=True)
 
+    # A decided claim stays on the books for whoever has to review the history
+    # later, but the applicant should not have to look at "rejected" forever.
+    # Dismissing hides it from their own page and nowhere else.
+    dismissed_at = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         ordering = ["-created_at"]
         verbose_name = "den claim"
@@ -1040,6 +1086,11 @@ class DenClaim(models.Model):
     @property
     def is_open(self) -> bool:
         return self.status == self.Status.PENDING
+
+    @property
+    def is_dismissable(self) -> bool:
+        """A decision the applicant can clear off their own page."""
+        return self.status != self.Status.PENDING and self.dismissed_at is None
 
 
 class MercenaryDen(models.Model):

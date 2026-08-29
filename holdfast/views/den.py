@@ -258,9 +258,9 @@ def information(request):
     """Your own dens, in as much detail as ESI gives us."""
     dens = list(own_dens(request.user))
     characters = own_den_characters(request.user)
-    claims = DenClaim.objects.filter(user=request.user).select_related(
-        "slot__skyhook__eve_planet", "character"
-    )
+    claims = DenClaim.objects.filter(
+        user=request.user, dismissed_at__isnull=True
+    ).select_related("slot__skyhook__eve_planet", "character")
     return render(
         request,
         "holdfast/den/information.html",
@@ -550,18 +550,50 @@ def withdraw_claim(request, claim_pk):
     return redirect("holdfast:den_information")
 
 
+@require_any(*DEN_ANY)
+@require_POST
+def dismiss_claim(request, claim_pk):
+    """Clear a decided claim off your own page.
+
+    A rejection you can do nothing about should not sit there forever. The row
+    survives for anyone reviewing the history; it just stops following the
+    applicant around.
+    """
+    claim = get_object_or_404(DenClaim, pk=claim_pk, user=request.user)
+    if not claim.is_dismissable:
+        messages.error(request, "That claim is still open. Withdraw it instead.")
+        return redirect("holdfast:den_information")
+    claim.dismissed_at = timezone.now()
+    claim.save(update_fields=["dismissed_at"])
+    messages.success(request, f"Cleared your claim on {claim.slot.planet_name}.")
+    return redirect("holdfast:den_information")
+
+
 @require_any(*DEN_ADMIN)
 @require_POST
 def decide_claim(request, claim_pk, decision):
     claim = get_object_or_404(DenClaim, pk=claim_pk)
-    if claim.status != DenClaim.Status.PENDING:
-        messages.error(request, "That claim has already been decided.")
-        return redirect("holdfast:den_admin")
-
     now = timezone.now()
     note = request.POST.get("decision_note", "")[:500]
 
-    if decision == "approve":
+    # Revoking acts on a claim that was granted, so it is the one decision
+    # that starts from something other than pending.
+    if decision == "revoke":
+        if claim.status != DenClaim.Status.APPROVED:
+            messages.error(request, "Only an approved claim can be revoked.")
+            return redirect("holdfast:den_admin")
+    elif claim.status != DenClaim.Status.PENDING:
+        messages.error(request, "That claim has already been decided.")
+        return redirect("holdfast:den_admin")
+
+    if decision == "revoke":
+        claim.status = DenClaim.Status.REVOKED
+        messages.success(
+            request,
+            f"Revoked {claim.character}'s claim on {claim.slot.planet_name}. "
+            "The slot is free again once the den comes down.",
+        )
+    elif decision == "approve":
         claim.status = DenClaim.Status.APPROVED
         # One slot, one holder: everyone else queued on it is turned down here
         # rather than left hanging.
@@ -592,23 +624,30 @@ def decide_claim(request, claim_pk, decision):
     # The applicant hears about it through Auth's own bell rather than a
     # channel ping -- a rejection is nobody else's business.
     approved = claim.status == DenClaim.Status.APPROVED
+    revoked = claim.status == DenClaim.Status.REVOKED
+    where = f"{claim.slot.planet_name} in {claim.slot.system_name}"
     notify_user(
         claim.user,
         title=(
-            f"Den site approved: {claim.slot.planet_name}"
+            f"Den site revoked: {claim.slot.planet_name}"
+            if revoked
+            else f"Den site approved: {claim.slot.planet_name}"
             if approved
             else f"Den site declined: {claim.slot.planet_name}"
         ),
         message=(
             (
-                f"Your claim on {claim.slot.planet_name} in {claim.slot.system_name} "
-                f"was approved for {claim.character}. You can anchor a den there now."
+                f"Your claim on {where} has been revoked. If you have a den "
+                "anchored there, please unanchor it -- the slot stays marked "
+                "as yours until you do."
+            )
+            if revoked
+            else (
+                f"Your claim on {where} was approved for {claim.character}. "
+                "You can anchor a den there now."
             )
             if approved
-            else (
-                f"Your claim on {claim.slot.planet_name} in {claim.slot.system_name} "
-                f"was not granted."
-            )
+            else f"Your claim on {where} was not granted."
         )
         + (f"\n\nNote from the manager: {note}" if note else ""),
         level="success" if approved else "warning",

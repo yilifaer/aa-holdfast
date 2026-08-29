@@ -37,6 +37,7 @@ urlpatterns = [
     path("den/slot/<int:slot_pk>/claim/", den.claim_slot, name="den_claim_slot"),
     path("den/slot/<int:slot_pk>/record/", den.record_den, name="den_record_den"),
     path("den/claim/<int:claim_pk>/withdraw/", den.withdraw_claim, name="den_withdraw_claim"),
+    path("den/claim/<int:claim_pk>/dismiss/", den.dismiss_claim, name="den_dismiss_claim"),
     path(
         "den/claim/<int:claim_pk>/<str:decision>/",
         den.decide_claim,

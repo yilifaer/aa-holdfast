@@ -66,7 +66,7 @@
                         <td>{{ claim.slot.planet_name }}</td>
                         <td class="holdfast-sub">{{ claim.character.character_name }}</td>
                         <td>
-                            <span class="badge {% if claim.status == 'approved' %}text-bg-success{% elif claim.status == 'pending' %}text-bg-primary{% else %}text-bg-secondary{% endif %}">{{ claim.get_status_display }}</span>
+                            <span class="badge {% if claim.status == 'approved' %}text-bg-success{% elif claim.status == 'pending' %}text-bg-primary{% elif claim.status == 'revoked' %}text-bg-warning{% else %}text-bg-secondary{% endif %}">{{ claim.get_status_display }}</span>
                         </td>
                         <td class="holdfast-sub">{{ claim.decision_note }}</td>
                         <td class="text-end">
@@ -74,6 +74,12 @@
                                 <form method="post" action="{% url 'holdfast:den_withdraw_claim' claim.pk %}">
                                     {% csrf_token %}
                                     <button class="btn btn-sm btn-outline-secondary">{% translate "Withdraw" %}</button>
+                                </form>
+                            {% elif claim.is_dismissable %}
+                                {# Decided and done with. Clearing it hides the row here only. #}
+                                <form method="post" action="{% url 'holdfast:den_dismiss_claim' claim.pk %}">
+                                    {% csrf_token %}
+                                    <button class="btn btn-sm btn-outline-secondary">{% translate "Clear" %}</button>
                                 </form>
                             {% endif %}
                         </td>

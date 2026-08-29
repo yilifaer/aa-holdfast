@@ -250,3 +250,148 @@ class OperationAttentionTests(TestCase):
 
         operation = self._operation(MercenaryTacticalOperation.State.STARTED, 48)
         self.assertEqual(operation.type_name, "Operation #12367")
+
+
+class HolderLabelTests(TestCase):
+    """One string for "who is on this slot", shared by the pings and the boards.
+
+    A Discord embed that says "no den of ours is anchored here" next to a field
+    naming the operator reads as a contradiction. Both now ask the slot.
+    """
+
+    def setUp(self):
+        corporation = EveCorporationInfo.objects.create(
+            corporation_id=98000004,
+            corporation_name="Invidia Administrative",
+            corporation_ticker="INVA",
+            member_count=42,
+        )
+        owner = Owner.objects.create(corporation=corporation)
+        skyhook = Skyhook.objects.create(
+            skyhook_id=1_000_000_000_004,
+            owner=owner,
+            planet_id=40_000_004,
+            effective_workforce=8316,
+        )
+        self.slot = DenSlot.objects.create(skyhook=skyhook)
+
+    def test_nobody_on_it_reads_as_unknown(self):
+        self.assertEqual(self.slot.holder_label, "unknown")
+        self.assertEqual(self.slot.holder_source, "")
+
+    def test_a_hand_record_is_marked_manual(self):
+        self.slot.recorded_den = True
+        self.slot.recorded_owner_note = "Nah vi"
+        self.slot.recorded_corporation_note = "Ether Element"
+        self.slot.save()
+
+        self.assertEqual(self.slot.holder_label, "Nah vi -- Ether Element (manual)")
+
+    def test_a_record_without_a_corporation_still_names_the_person(self):
+        self.slot.recorded_den = True
+        self.slot.recorded_owner_note = "Nah vi"
+        self.slot.save()
+
+        self.assertEqual(self.slot.holder_label, "Nah vi (manual)")
+
+
+class ClaimLifecycleTests(TestCase):
+    """Revoking and dismissing: the two ends of a decision that is not final."""
+
+    def setUp(self):
+        from allianceauth.authentication.models import CharacterOwnership
+        from allianceauth.eveonline.models import EveCharacter
+        from django.contrib.auth.models import User
+
+        from ..models import DenCharacter, DenClaim, MercenaryDen
+
+        self.DenClaim = DenClaim
+        self.MercenaryDen = MercenaryDen
+        corporation = EveCorporationInfo.objects.create(
+            corporation_id=98000005,
+            corporation_name="Golden Fleece",
+            corporation_ticker="GF",
+            member_count=10,
+        )
+        owner = Owner.objects.create(corporation=corporation)
+        self.skyhook = Skyhook.objects.create(
+            skyhook_id=1_000_000_000_005,
+            owner=owner,
+            planet_id=40_000_005,
+            effective_workforce=9200,
+        )
+        self.slot = DenSlot.objects.create(skyhook=self.skyhook)
+        self.user = User.objects.create_user("applicant")
+        self.character = EveCharacter.objects.create(
+            character_id=90000005,
+            character_name="rmand A",
+            corporation_id=98000005,
+            corporation_name="Golden Fleece",
+            corporation_ticker="GF",
+        )
+        self.ownership = CharacterOwnership.objects.create(
+            user=self.user, character=self.character, owner_hash="test-hash-5"
+        )
+        self.den_character = DenCharacter.objects.create(
+            character_ownership=self.ownership
+        )
+        self.claim = DenClaim.objects.create(
+            slot=self.slot, user=self.user, character=self.character
+        )
+
+    def test_a_pending_claim_is_not_dismissable(self):
+        """Still open means withdraw, not clear."""
+        self.assertTrue(self.claim.is_open)
+        self.assertFalse(self.claim.is_dismissable)
+
+    def test_a_rejected_claim_can_be_cleared_once(self):
+        self.claim.status = self.DenClaim.Status.REJECTED
+        self.claim.save()
+        self.assertTrue(self.claim.is_dismissable)
+
+        from django.utils import timezone
+
+        self.claim.dismissed_at = timezone.now()
+        self.claim.save()
+        self.assertFalse(self.claim.is_dismissable)
+
+    def test_revoking_frees_the_slot_when_nothing_is_anchored(self):
+        self.claim.status = self.DenClaim.Status.APPROVED
+        self.claim.save()
+        self.assertEqual(self.slot.status, DenSlot.Status.ASSIGNED)
+
+        self.claim.status = self.DenClaim.Status.REVOKED
+        self.claim.save()
+        self.assertEqual(self.slot.status, DenSlot.Status.FREE)
+        self.assertTrue(self.slot.is_claimable)
+
+    def test_revoking_does_not_unanchor_a_den_that_is_still_there(self):
+        """Only the operator can take a den down, so the slot keeps saying so."""
+        self.claim.status = self.DenClaim.Status.REVOKED
+        self.claim.save()
+        self.MercenaryDen.objects.create(
+            den_id=2_000_000_000_005,
+            den_character=self.den_character,
+            planet_id=self.skyhook.planet_id,
+            skyhook_id=self.skyhook.skyhook_id,
+            slot=self.slot,
+            state=self.MercenaryDen.State.RUNNING,
+        )
+
+        self.assertEqual(self.slot.status, DenSlot.Status.ANCHORED)
+        self.assertFalse(self.slot.is_claimable)
+        self.assertTrue(self.slot.awaiting_removal)
+
+    def test_an_approved_slot_with_a_den_is_not_awaiting_removal(self):
+        self.claim.status = self.DenClaim.Status.APPROVED
+        self.claim.save()
+        self.MercenaryDen.objects.create(
+            den_id=2_000_000_000_006,
+            den_character=self.den_character,
+            planet_id=self.skyhook.planet_id,
+            skyhook_id=self.skyhook.skyhook_id,
+            slot=self.slot,
+            state=self.MercenaryDen.State.RUNNING,
+        )
+
+        self.assertFalse(self.slot.awaiting_removal)

@@ -172,8 +172,14 @@ def check_mto_available() -> int:
     """Tell the operator an MTO is up, with its expiry."""
     sent = 0
     now = timezone.now()
+    # Both live states, for the same reason the dashboard counts both: an
+    # operation somebody has started is still running against its expiry, and
+    # ours arrive from ESI already marked Started.
     operations = MercenaryTacticalOperation.objects.filter(
-        state=MercenaryTacticalOperation.State.AVAILABLE
+        state__in=(
+            MercenaryTacticalOperation.State.AVAILABLE,
+            MercenaryTacticalOperation.State.STARTED,
+        )
     ).select_related("den__eve_planet", "den__eve_solar_system", "den_character")
 
     for operation in operations:
@@ -184,11 +190,16 @@ def check_mto_available() -> int:
             continue
         den = operation.den
         where = den.planet_name if den else str(operation.mercenary_den_id)
+        verb = (
+            "running"
+            if operation.state == MercenaryTacticalOperation.State.STARTED
+            else "available"
+        )
         expiry = ""
         delivered = _send(
             _embed(
-                title=f"Tactical operation available: {where}",
-                description=f"**{operation.type_name}** is up at **{where}**.{expiry}",
+                title=f"Tactical operation {verb}: {where}",
+                description=f"**{operation.type_name}** is {verb} at **{where}**.{expiry}",
                 color=COLOR_INFO,
                 fields=[
                     Field(name="Operator", value=str(operation.den_character), inline=True),
@@ -339,7 +350,10 @@ def check_siphoned_skyhooks() -> int:
             _mark_sent(key)
             continue
 
-        known = " Already recorded by hand." if (slot and slot.recorded_den) else ""
+        # Who is on it, if anyone knows. Saying "no den of ours is anchored
+        # here" while the field underneath names the operator reads as a
+        # contradiction, so the sentence follows what we actually know.
+        whose = slot.holder_label if slot else "unknown"
         delivered = _send(
             _embed(
                 title=f"Den siphoning workforce: {skyhook.planet_name}",
@@ -349,7 +363,11 @@ def check_siphoned_skyhooks() -> int:
                     f"**{skyhook.workforce_base:,}** -- a mercenary den is taking "
                     f"**{skyhook.workforce_siphon_percent:.0f}%**, "
                     f"{skyhook.siphoned_amount:,} a cycle. "
-                    f"No den of ours is anchored here.{known}"
+                    + (
+                        f"Run by {whose}."
+                        if whose != "unknown"
+                        else "Nobody is on record as running a den here."
+                    )
                 ),
                 color=COLOR_WARNING,
                 fields=[
@@ -361,7 +379,7 @@ def check_siphoned_skyhooks() -> int:
                     ),
                     Field(
                         name="Den slot",
-                        value=slot.status_label if slot else "not a temperate planet",
+                        value=slot.holder_label if slot else "not a temperate planet",
                         inline=True,
                     ),
                 ],

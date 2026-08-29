@@ -109,8 +109,13 @@
                         <td data-filter-value="{{ slot.status_label }}">
                             <span class="holdfast-status holdfast-status--{{ slot.status }}">{{ slot.status_label }}</span>
                             {% if slot.is_overdue %}<div class="holdfast-sub text-warning">{% translate "approved, nothing anchored" %}</div>{% endif %}
+                            {# Revoking cannot unanchor anything; only the operator can. #}
+                            {% if slot.awaiting_removal %}<div class="holdfast-sub text-warning">{% translate "revoked, den still up" %}</div>{% endif %}
                         </td>
-                        <td>{{ slot.holder_name|default:"&mdash;" }}</td>
+                        <td>
+                            {{ slot.holder_name|default:"&mdash;" }}
+                            {% if slot.holder_source %}<div class="holdfast-sub">{{ slot.holder_source }}</div>{% endif %}
+                        </td>
                         <td class="holdfast-sub">{{ slot.holder_corporation|default:"&mdash;" }}</td>
                         <td class="holdfast-sub">
                             {% with estimate=slot.skyhook.siphon_estimate %}
@@ -123,6 +128,17 @@
                         </td>
                         <td class="text-end">
                             {% if can_manage %}
+                                {% with granted=slot.approved_claim %}
+                                    {% if granted %}
+                                        {# Taking the ground back. The operator has to unanchor it themselves. #}
+                                        <form method="post" class="d-inline"
+                                              action="{% url 'holdfast:den_decide_claim' granted.pk 'revoke' %}"
+                                              onsubmit="return confirm('{% translate "Revoke this slot? The operator will be told to unanchor their den." %}');">
+                                            {% csrf_token %}
+                                            <button class="btn btn-sm btn-outline-warning">{% translate "Revoke" %}</button>
+                                        </form>
+                                    {% endif %}
+                                {% endwith %}
                                 <button class="btn btn-sm btn-outline-secondary" type="button"
                                         data-bs-toggle="collapse" data-bs-target="#hostile-{{ slot.pk }}">
                                     {% translate "Record" %}

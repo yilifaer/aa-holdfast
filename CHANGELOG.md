@@ -49,6 +49,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- A den manager can revoke a claim they granted. Revoking does not unanchor
+  anything -- only the operator can -- so the slot keeps saying "revoked, den
+  still up" until it comes down.
+- An applicant can clear a decided claim off their own page. The row survives
+  for anyone reviewing the history; it just stops following them around.
+- Siphon alerts name the holder as `name -- corporation (auto|manual)` from a
+  single property, instead of one alert saying "no den of ours is anchored
+  here" while the field beside it named the operator.
+- Tactical operation alerts cover the `Started` state, which is how every
+  operation seen so far has arrived.
 - The workforce-shortfall alert went silent wherever a den was already known,
   which after importing a den census meant almost everywhere. A den that has
   *started* taking workforce is news whoever runs it, so it now speaks either
