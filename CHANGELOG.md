@@ -4,7 +4,9 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses
 [semantic versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.1.0] - 2026-08-29
+
+First release.
 
 ### Added
 
@@ -46,32 +48,18 @@ All notable changes to this project are documented here. The format follows
 - Requires ESI compatibility date 2026-05-19 or later. The sovereignty hub and
   skyhook routes do not exist before it, and ESI answers 404 rather than
   telling you why.
-
-### Fixed
-
-- A den manager can revoke a claim they granted. Revoking does not unanchor
-  anything -- only the operator can -- so the slot keeps saying "revoked, den
-  still up" until it comes down.
-- An applicant can clear a decided claim off their own page. The row survives
-  for anyone reviewing the history; it just stops following them around.
-- Siphon alerts name the holder as `name -- corporation (auto|manual)` from a
-  single property, instead of one alert saying "no den of ours is anchored
-  here" while the field beside it named the operator.
-- Tactical operation alerts cover the `Started` state, which is how every
-  operation seen so far has arrived.
-- The workforce-shortfall alert went silent wherever a den was already known,
-  which after importing a den census meant almost everywhere. A den that has
-  *started* taking workforce is news whoever runs it, so it now speaks either
-  way and changes only its wording.
-- Siphon detection covers the case the fingerprint is blind to. A base that is
-  a multiple of a hundred stays round after a percentage comes off it (9200 ->
-  8280), so the arithmetic tell is absent; measured against a peak the app
-  recorded itself, the ratio lands exactly on a known rate. Reported as
-  `inferred` rather than `measured`, since it trusts that the peak was clean.
-- Tactical operations in the `Started` state were dropped from the dashboard
-  and the badge, which counted only `Available` ones -- so a member who had
-  actually begun an operation saw "All clear" until it expired.
-- Operations no longer claim a name they do not have. `dungeon_type_id`
-  indexes dungeons, not inventory types, so resolving it produced whatever
-  item shared the number: 12367 came back as the skill "Explosive Shield
-  Compensation".
+- `eveuniverse` must be in `INSTALLED_APPS`. This app has foreign keys into
+  its models, so it is a Django app that has to be registered, not just a
+  library. Several other Auth apps add it too, which is what makes it easy to
+  miss.
+- A tactical operation's `dungeon_type_id` indexes dungeons, not inventory
+  types. Looking it up in the type tables returns whatever item shares the
+  number -- 12367 comes back as the skill *Explosive Shield Compensation* --
+  and no route names a dungeon, so it is shown as a number.
+- Siphon detection reports how sure it is. `measured` means the workforce
+  figure is not a round multiple of ten, which no undisturbed skyhook ever
+  reports; `inferred` means it fell to exactly a known rate off a peak this
+  app recorded itself, which trusts that peak to have been clean; `suspected`
+  means it is below its peak and no rate explains the figure.
+- Both `Available` and `Started` tactical operations count as live. Started is
+  not finished, and it expires on a clock either way.

@@ -12,6 +12,7 @@ from datetime import timedelta
 
 from celery import shared_task
 from django.utils import timezone
+from esi.models import Token
 
 from .app_settings import (
     HOLDFAST_OWNER_SYNC_JITTER_SECONDS,
@@ -50,6 +51,14 @@ def update_owner(owner_pk):
 
     try:
         stats = esi_sync.update_owner(owner)
+    except Token.DoesNotExist as exc:
+        # A revoked or never-registered token is a configuration problem, not
+        # a fault. Raising made every 15-minute run log a task failure for as
+        # long as it stayed unfixed, which buries the failures that matter.
+        # It is recorded on the owner and shown on the Owners page instead.
+        logger.warning("%s: %s", owner, exc)
+        owner.mark_sync(False, str(exc))
+        return None
     except esi_sync.ESIBucketLimitException as exc:
         # Another app sharing this token's bucket got there first. Nothing is
         # wrong with our data; the next run picks up where this one stopped.
@@ -144,6 +153,12 @@ def update_den_character(den_character_pk):
 
     try:
         stats = den_sync.update_den_character(den_character)
+    except Token.DoesNotExist as exc:
+        # Same reasoning as update_owner: operators lose tokens routinely --
+        # they leave, or re-authorise a character elsewhere.
+        logger.warning("%s: %s", den_character, exc)
+        den_character.mark_sync(False, str(exc))
+        return None
     except esi_sync.ESIBucketLimitException as exc:
         logger.warning("%s: rate limited (%s)", den_character, exc)
         den_character.mark_sync(False, f"Rate limited, will retry next run: {exc}")
