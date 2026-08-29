@@ -4,6 +4,26 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses
 [semantic versioning](https://semver.org/).
 
+## [0.1.2] - 2026-08-30
+
+### Fixed
+
+- Fuel alerts walked a hub up the severity ladder one run at a time. The bands
+  were checked widest first and the loop stopped at the first one not already
+  sent, so a hub discovered with twelve hours of fuel got `warning`, then
+  `danger` ten minutes later, then `critical` ten minutes after that. Three
+  messages for one situation, opening with the least alarming one -- and an
+  officer who read the first would reasonably have put it off. It now reports
+  the tightest band the hub currently sits in, once, and says nothing further
+  until something changes.
+
+### Changed
+
+- The rate-limiting section of the README describes what the code does. It
+  still said 300 requests where ESI counts tokens, 50 calls where the default
+  is 60, and a fifth of the bucket where the worst case is 41%. A duplicate
+  comment in `app_settings.py` still recommended the old default of 100.
+
 ## [0.1.1] - 2026-08-30
 
 Six bugs from an outside review, all of which this alliance's own numbers hid.

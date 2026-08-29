@@ -35,12 +35,6 @@ HOLDFAST_TRACK_EXTRA_ALLIANCE_IDS = _setting("HOLDFAST_TRACK_EXTRA_ALLIANCE_IDS"
 # itself is cached for 300s, so going below that just burns rate limit.
 HOLDFAST_RAIDABLE_CACHE_SECONDS = _setting("HOLDFAST_RAIDABLE_CACHE_SECONDS", 300)
 
-# Detail calls one owner may spend per sync run. Each hub and each skyhook
-# costs one. The corp-structure rate limit is 300 per 15 minutes per token and
-# is shared with any other app using the same character, so leave headroom: at
-# 100 per run on a 15-minute schedule a 460-structure corporation is fully
-# refreshed in about 75 minutes, close to CCP's own one hour cache, using a
-# third of the bucket.
 # Detail calls per owner per run. ESI charges two rate-limit tokens for a
 # successful response, so 60 calls is about 120 tokens of the 300-per-15-
 # minutes corporation bucket -- leaving most of it for the other apps that
@@ -48,8 +42,6 @@ HOLDFAST_RAIDABLE_CACHE_SECONDS = _setting("HOLDFAST_RAIDABLE_CACHE_SECONDS", 30
 # cost one token, and spent two thirds of the bucket rather than one third.
 HOLDFAST_DETAIL_CALLS_PER_RUN = _setting("HOLDFAST_DETAIL_CALLS_PER_RUN", 60)
 
-# Stagger owner syncs by this many seconds so a big alliance doesn't fire every
-# corp's requests in the same instant.
 # Spread owners out so they do not all reach for the same bucket at once.
 # Kept well under the gap between runs: at five minutes, two runs of a
 # fifteen-minute schedule could land ten minutes apart and overlap inside

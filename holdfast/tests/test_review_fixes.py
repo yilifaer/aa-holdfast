@@ -314,3 +314,90 @@ class CrossAllianceWriteTests(TestCase):
             self._post(f"/holdfast/den/claim/{claim.pk}/approve/")
         claim.refresh_from_db()
         self.assertEqual(claim.status, DenClaim.Status.PENDING)
+
+
+class FuelBandOrderTests(TestCase):
+    """A hub found already in trouble must be told about at that severity.
+
+    The bands were walked widest first and the loop stopped at the first one
+    not yet sent. Combined with the already-sent check that turned into a
+    ladder: a hub discovered with twelve hours of fuel got "warning", then ten
+    minutes later "danger", then ten minutes after that "critical". Three
+    messages for one situation, opening with the least alarming -- and an
+    officer reading the first one would reasonably put it off.
+    """
+
+    def setUp(self):
+        from ..models import AlertLog, Webhook
+
+        corporation = EveCorporationInfo.objects.create(
+            corporation_id=98000030,
+            corporation_name="Fuel Test Holdings",
+            corporation_ticker="FTH",
+            member_count=3,
+        )
+        self.owner = Owner.objects.create(corporation=corporation)
+        self.config = HoldfastConfig.get_solo()
+        self.config.fuel_warning_days = 7
+        self.config.fuel_danger_days = 3
+        self.config.fuel_critical_days = 1
+        self.config.sov_discord_enabled = True
+        self.config.save()
+        # A channel has to exist, or _send returns False and nothing is
+        # recorded as sent -- which would make every assertion here vacuous.
+        Webhook.objects.create(
+            name="test", url="https://discord.com/api/webhooks/1/x", is_enabled=True
+        )
+        AlertLog.objects.all().delete()
+
+    def _hub(self, hours_left):
+        return SovHub.objects.create(
+            hub_id=4_000_000 + int(hours_left * 100),
+            owner=self.owner,
+            solar_system_id=30009900 + int(hours_left),
+            fuel_expires_at=timezone.now() + timedelta(hours=hours_left),
+        )
+
+    def _run(self):
+        """One alert pass, with delivery stubbed to always succeed."""
+        from ..core import alerts
+
+        titles = []
+        original = alerts._send
+        alerts._send = lambda embed, category=None: (titles.append(embed.title) or True)
+        try:
+            alerts.check_hub_fuel()
+        finally:
+            alerts._send = original
+        return titles
+
+    def test_a_hub_found_at_twelve_hours_is_called_critical_first(self):
+        self._hub(hours_left=12)
+        titles = self._run()
+        self.assertEqual(len(titles), 1, "one message per hub per run")
+        self.assertIn("critical", titles[0])
+
+    def test_it_does_not_then_walk_back_down_the_ladder(self):
+        """The old order sent danger and warning on the following runs."""
+        self._hub(hours_left=12)
+        self.assertEqual(len(self._run()), 1)
+        self.assertEqual(self._run(), [], "nothing more to say about the same hub")
+        self.assertEqual(self._run(), [])
+
+    def test_a_comfortable_hub_still_gets_the_gentle_band(self):
+        self._hub(hours_left=5 * 24)
+        titles = self._run()
+        self.assertEqual(len(titles), 1)
+        self.assertIn("warning", titles[0])
+
+    def test_a_hub_decaying_through_the_bands_escalates(self):
+        hub = self._hub(hours_left=5 * 24)
+        self.assertIn("warning", self._run()[0])
+
+        hub.fuel_expires_at = timezone.now() + timedelta(hours=2 * 24)
+        hub.save()
+        self.assertIn("danger", self._run()[0])
+
+        hub.fuel_expires_at = timezone.now() + timedelta(hours=6)
+        hub.save()
+        self.assertIn("critical", self._run()[0])

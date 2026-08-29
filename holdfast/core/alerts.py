@@ -206,12 +206,15 @@ def check_hub_fuel() -> int:
     """
     sent = 0
     config = HoldfastConfig.get_solo()
-    # Widest band first so a hub that has just entered "amber" alerts on amber,
-    # while one already inside "critical" alerts on critical.
+    # Tightest band first. Widest-first plus the already-sent check walked a
+    # hub up the ladder one run at a time: a hub first seen with twelve hours
+    # of fuel got "warning", then ten minutes later "danger", then "critical" --
+    # three messages, starting with the least alarming, for a situation that
+    # was critical when we found it.
     bands = [
-        ("warning", config.fuel_warning_days),
-        ("danger", config.fuel_danger_days),
         ("critical", config.fuel_critical_days),
+        ("danger", config.fuel_danger_days),
+        ("warning", config.fuel_warning_days),
     ]
     colors = {
         "warning": COLOR_WARNING,
@@ -228,12 +231,20 @@ def check_hub_fuel() -> int:
         # rotates the key and re-arms every band.
         stamp = hub.fuel_expires_at.strftime("%Y%m%d%H")
 
-        for severity, limit in bands:
-            if days > limit:
-                continue
-            key = f"fuel:{hub.hub_id}:{severity}:{stamp}"
-            if _already_sent(key):
-                continue
+        # The tightest band this hub currently sits inside, and only that one.
+        # Falling through to the next band when the tightest was already sent
+        # is what produced a run of three messages for one hub: it has nothing
+        # new to say, so it says nothing.
+        severity = None
+        for candidate, days_limit in bands:
+            if days <= days_limit:
+                severity = candidate
+                break
+        if severity is None:
+            continue
+
+        key = f"fuel:{hub.hub_id}:{severity}:{stamp}"
+        if not _already_sent(key):
             reagents = [
                 Field(
                     name=r.type_name,
@@ -258,11 +269,9 @@ def check_hub_fuel() -> int:
                 ),
                 category=AlertCategory.SOV_FUEL,
             )
-            if not delivered:
-                break
-            _mark_sent(key)
-            sent += 1
-            break  # one alert per hub per run, at the tightest band crossed
+            if delivered:
+                _mark_sent(key)
+                sent += 1
     return sent
 
 

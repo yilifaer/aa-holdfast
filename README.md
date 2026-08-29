@@ -174,14 +174,31 @@ bucket at once.
 
 ## Rate limiting
 
-Each hub and each skyhook needs its own detail call. The `corp-structure` bucket allows **300 requests per 15 minutes per token**, and that bucket is shared with any other app using the same character — `aa-structures`, for instance.
+Each hub and each skyhook needs its own detail call, and ESI meters those in
+tokens rather than requests: a `2xx` costs **two**, a `304` costs **one**. The
+`corp-structure` bucket holds **300 tokens per 15 minutes**, keyed on
+application and character together, so it is shared with any other app your
+users have authorised the same character to — `aa-structures`, for instance.
+
+Counting calls and calling them tokens is how the first release ended up
+spending two thirds of the bucket while its own comments claimed one third.
 
 A real alliance corporation can hold 150+ structures, so refreshing everything every run exhausts the bucket and leaves rows stale with no way to tell which ones. Instead:
 
 1. Both listings are pulled every run (2 calls). They are complete, so they decide what exists — creating rows for new structures and deleting departed ones.
-2. A fixed budget of detail calls is spent on the structures whose details are stalest.
+2. A fixed budget of detail calls is spent on whatever has gone longest without one, hub and skyhook alike.
 
-At the default 50 calls per run on a 15-minute schedule, a 150-structure corporation refreshes fully about every 45 minutes — inside the hour CCP caches these routes for anyway — using roughly a fifth of the bucket. Structures awaiting their first detail pull show as *queued* in the UI.
+At the default 60 calls per run on a 15-minute schedule, a 150-structure
+corporation refreshes fully in about 40 minutes — inside the hour CCP caches
+these routes for anyway. The worst case is `60 x 2 + 2 x 2 = 124` tokens, or
+**41%** of the bucket, leaving the rest for everything else sharing it.
+Structures awaiting their first detail pull show as *queued* in the UI.
+
+Both listings and the details come out of one queue ordered by staleness. An
+earlier version split the budget between them in proportion to their counts,
+which starved the smaller list: one hub among 199 skyhooks was allotted
+`round(100 * 1/200)`, and Python rounds a half to even, so it got nothing at
+all — every run, with no error anywhere.
 
 If `ESIBucketLimitException` is raised mid-run anyway (because another app drained the bucket), the run stops cleanly and the owner is marked with a note; the next run continues from where it left off.
 
