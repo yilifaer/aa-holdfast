@@ -68,7 +68,7 @@ Three bands -- amber, red, critical -- are set in days in Django admin (**Holdfa
 
 - Alliance Auth 4.6+
 - django-esi 9.10+ (needed for compatibility-date support)
-- django-eveuniverse, allianceauth-app-utils, dhooks-lite
+- django-eveuniverse, dhooks-lite, PyYAML
 
 ## Install
 
@@ -79,8 +79,18 @@ pip install -e /path/to/aa-holdfast
 Add to `INSTALLED_APPS` in `myauth/settings/local.py`:
 
 ```python
-INSTALLED_APPS += ["holdfast"]
+INSTALLED_APPS += ["eveuniverse", "holdfast"]
 ```
+
+`eveuniverse` is a separate Django app, not just a library: this app has
+foreign keys into its models, so leaving it out stops Alliance Auth from
+starting at all. Several other Auth apps also add it, which is exactly why it
+is easy to forget -- it is often already there for some other reason. Adding it
+twice is harmless.
+
+No `eveuniverse` preload is needed. Types, systems and planets are fetched the
+first time they are seen and kept, so there is no hour-long
+`eveuniverse_load_data` step before the app is usable.
 
 Then:
 

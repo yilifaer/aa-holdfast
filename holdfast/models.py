@@ -9,7 +9,17 @@ from django.db import models
 from django.utils import timezone
 from django.utils import timezone as timezone_module
 from esi.models import Token
-from eveuniverse.models import EvePlanet, EveSolarSystem, EveType
+
+try:
+    from eveuniverse.models import EvePlanet, EveSolarSystem, EveType
+except RuntimeError as error:  # pragma: no cover - a misconfigured install
+    # Django's own message here names one of eveuniverse's models and says it
+    # "isn't in an application in INSTALLED_APPS", which sends people looking
+    # in the wrong place. The actual fix is one line in local.py.
+    raise RuntimeError(
+        "holdfast needs 'eveuniverse' in INSTALLED_APPS. Add it in local.py: "
+        'INSTALLED_APPS += ["eveuniverse", "holdfast"]'
+    ) from error
 
 from .app_settings import HOLDFAST_ESI_SCOPES
 

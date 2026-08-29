@@ -29,10 +29,13 @@ classifiers = [
 ]
 dependencies = [
     "allianceauth>=4.6",
-    "django-esi>=9.10",
+    "django-esi>=9.10",          # compatibility-date support
     "django-eveuniverse>=1.5",
-    "allianceauth-app-utils>=1.19",
     "dhooks-lite>=1.1",
+    # Notification bodies are YAML, anchors and all. Alliance Auth happens to
+    # require this too, but depending on somebody else's dependency is how an
+    # install breaks on a day nothing here changed.
+    "PyYAML>=6.0",
 ]
 
 [project.urls]
