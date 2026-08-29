@@ -13,9 +13,14 @@ on a day this package did not change.
 import ast
 import pathlib
 import sys
+import unittest
 
-import tomllib
 from django.test import SimpleTestCase
+
+try:
+    import tomllib  # standard library from Python 3.11
+except ModuleNotFoundError:  # pragma: no cover - 3.10 only
+    tomllib = None
 
 # Alliance Auth is a hard dependency and drags these in, so importing them
 # without naming them is safe and normal in an Auth app.
@@ -44,6 +49,14 @@ PROVIDES = {
 PACKAGE_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
+@unittest.skipIf(
+    tomllib is None,
+    "tomllib arrived in 3.11 and this test reads pyproject.toml. What it "
+    "checks is a fact about the source tree rather than about the "
+    "interpreter, so the other versions in the matrix cover it -- and adding "
+    "a tomli dependency to support one Python version, inside a test about "
+    "not carrying stray dependencies, would be its own joke.",
+)
 class DependencyDeclarationTests(SimpleTestCase):
     def _declared_modules(self):
         with open(PACKAGE_ROOT.parent / "pyproject.toml", "rb") as handle:
