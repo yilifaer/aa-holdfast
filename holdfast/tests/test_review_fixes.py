@@ -171,43 +171,6 @@ class SettingsActuallyApplyTests(TestCase):
         self.assertIn("config.skyhook_theft_lead_minutes", source)
         self.assertNotIn("HOLDFAST_SKYHOOK_THEFT_LEAD_MINUTES", source)
 
-    def test_no_setting_is_written_by_the_form_and_read_by_nobody(self):
-        """The audit that found the other seven, kept as a test.
-
-        A field only the settings page touches is a promise the app does not
-        keep. If a new one appears, this fails before anyone ships it.
-        """
-        import ast
-        import pathlib
-        import re
-
-        root = pathlib.Path(__file__).resolve().parent.parent
-        tree = ast.parse((root / "models.py").read_text(encoding="utf-8"))
-        fields = []
-        for node in tree.body:
-            if isinstance(node, ast.ClassDef) and node.name == "HoldfastConfig":
-                for statement in node.body:
-                    if isinstance(statement, ast.Assign) and isinstance(
-                        statement.value, ast.Call
-                    ):
-                        if "models." in ast.unparse(statement.value):
-                            fields.append(ast.unparse(statement.targets[0]))
-
-        consumed = ""
-        for path in list((root / "core").glob("*.py")) + [root / "models.py"]:
-            consumed += path.read_text(encoding="utf-8")
-
-        # SECTION_SWITCH reaches its fields through getattr, so the names only
-        # appear as strings.
-        unread = [
-            name
-            for name in fields
-            if not re.search(rf"\.{name}\b|['\"]{name}['\"]", consumed)
-        ]
-        self.assertEqual(
-            unread, [], "settings the pages write and nothing ever reads"
-        )
-
 
 class CrossAllianceWriteTests(TestCase):
     """The den write paths looked up rows by primary key alone.

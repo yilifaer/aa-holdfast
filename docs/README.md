@@ -43,3 +43,31 @@ s["_auth_user_hash"] = user.get_session_auth_hash()
 s.create()
 print(s.session_key)
 ```
+
+
+# Structural tests
+
+`holdfast/tests/test_structure.py` checks rules about the code rather than
+about what it computes: a POST handler goes through a scoped queryset, a
+settings field is read somewhere, an alert category has something that emits
+it, a declared permission is enforced.
+
+Those exist because every bug an outside review found in 0.1.0 was invisible
+against this alliance's own data. A budget split that rounds to zero needs one
+hub among two hundred skyhooks; cross-alliance writes need a second alliance;
+a dead settings switch needs somebody to toggle it. Testing harder against our
+own numbers would not have found any of them.
+
+## Checking the guards actually guard
+
+A structural test that has never failed is a claim, not evidence:
+
+```bash
+python docs/mutate_structure.py
+```
+
+It introduces each mistake in turn -- a category with no section, a permission
+nobody checks, a config field nothing reads -- runs the test that should catch
+it, and restores the file. Every line should say `caught`. Set
+`HOLDFAST_PYTHON` if the suite needs an interpreter other than the one running
+the script.
