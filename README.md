@@ -1,5 +1,11 @@
 # aa-holdfast
 
+[![CI](https://github.com/yilifaer/aa-holdfast/actions/workflows/ci.yml/badge.svg)](https://github.com/yilifaer/aa-holdfast/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/aa-holdfast)](https://pypi.org/project/aa-holdfast/)
+[![Python](https://img.shields.io/pypi/pyversions/aa-holdfast)](https://pypi.org/project/aa-holdfast/)
+[![License](https://img.shields.io/badge/license-GPLv3-blue)](LICENSE)
+
+
 Sovereignty Hub fuel and Orbital Skyhook monitoring for [Alliance Auth](https://gitlab.com/allianceauth/allianceauth), built on the Equinox ESI routes.
 
 ## Why this exists
