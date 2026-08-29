@@ -272,6 +272,15 @@ EVE stores notifications server-side, so nothing is missed while an operator is 
 
 ## Alerts
 
+![A siphon alert in Discord](docs/images/discord-alert.png)
+
+<sub>Every moment appears three times: how far away it is, the reader's own
+local time, and EVE time. Discord renders the first two in each viewer's
+language and timezone -- which is why they are in Chinese above and will not be
+for you -- while the third is the same for everyone, and is the one you paste
+into a fleet ping. <b>How we know</b> is there because the two siphon detectors
+are not equally sure of themselves.</sub>
+
 Create a webhook in Django admin (*Holdfast → Webhooks*) with a Discord channel webhook URL, then:
 
 ```bash
