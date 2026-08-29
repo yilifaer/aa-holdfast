@@ -65,14 +65,14 @@ class Command(BaseCommand):
         if options["user"]:
             try:
                 recorder = get_user_model().objects.get(username=options["user"])
-            except get_user_model().DoesNotExist:
-                raise CommandError(f"No such user: {options['user']}")
+            except get_user_model().DoesNotExist as error:
+                raise CommandError(f"No such user: {options['user']}") from error
 
         try:
             with open(path, newline="", encoding="utf-8-sig") as handle:
                 rows = list(csv.DictReader(handle))
         except OSError as error:
-            raise CommandError(f"Cannot read {path}: {error}")
+            raise CommandError(f"Cannot read {path}: {error}") from error
 
         if not rows:
             raise CommandError("The file has no rows.")

@@ -28,12 +28,11 @@ from django.utils import timezone
 from ..models import (
     AlertCategory,
     DenEvent,
+    HoldfastConfig,
     MercenaryDen,
     MercenaryTacticalOperation,
     Skyhook,
-    HoldfastConfig,
 )
-from .notifications import invalidate_badges, notify_user
 from .alerts import (
     COLOR_DANGER,
     COLOR_INFO,
@@ -44,6 +43,7 @@ from .alerts import (
     _mark_sent,
     _send,
 )
+from .notifications import invalidate_badges, notify_user
 
 logger = logging.getLogger(__name__)
 

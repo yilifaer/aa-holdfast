@@ -9,12 +9,11 @@ from django.views.decorators.http import require_POST
 from eveuniverse.models import EvePlanet, EveSolarSystem
 
 from ..core.esi_sync import get_raidable_skyhooks
-from ..models import ReagentThreshold, Skyhook, HoldfastConfig
-from ..models import Webhook
+from ..models import HoldfastConfig, ReagentThreshold, Skyhook, Webhook
 from .common import (
+    require_any,
     routes_for_section,
     save_routes,
-    require_any,
     skyhook_can_manage,
     skyhook_can_view_all,
     stealable_skyhooks,

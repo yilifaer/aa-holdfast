@@ -18,6 +18,7 @@ from ..models import (
     DenEvent,
     DenSlot,
     EvolutionLevel,
+    HoldfastConfig,
     MercenaryDen,
     MercenaryTacticalOperation,
     PowerState,
@@ -25,7 +26,6 @@ from ..models import (
     Skyhook,
     SovCampaign,
     SovHub,
-    HoldfastConfig,
     SovSystem,
 )
 

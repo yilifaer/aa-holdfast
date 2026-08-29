@@ -35,21 +35,21 @@ from eveuniverse.models import EvePlanet, EveSolarSystem, EveType
 
 from ..app_settings import (
     HOLDFAST_DETAIL_CALLS_PER_RUN,
-    HOLDFAST_SKYHOOK_MIN_UNSECURED,
     HOLDFAST_RAIDABLE_CACHE_SECONDS,
+    HOLDFAST_SKYHOOK_MIN_UNSECURED,
     HOLDFAST_TRACK_EXTRA_ALLIANCE_IDS,
 )
 from ..models import (
     Owner,
-    SovCampaign,
-    SystemCostIndex,
     ReagentThreshold,
     Skyhook,
     SkyhookReagent,
+    SovCampaign,
     SovHub,
     SovHubReagent,
     SovHubUpgrade,
     SovSystem,
+    SystemCostIndex,
 )
 from ..providers import esi
 from .siphon import detect_siphon

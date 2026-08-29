@@ -13,13 +13,12 @@ role. What gets registered is decided here instead, from the permissions the
 user already has.
 """
 
-from django.contrib.auth.models import Permission
-from django.db.models import Exists, OuterRef
-
 from allianceauth.authentication.models import CharacterOwnership
 from allianceauth.eveonline.models import EveCharacter, EveCorporationInfo
 from charlink.app_imports.utils import AppImport, LoginImport
 from charlink.utils import users_with_permissions
+from django.contrib.auth.models import Permission
+from django.db.models import Exists, OuterRef
 
 from ..app_settings import HOLDFAST_DEN_ESI_SCOPES, HOLDFAST_ESI_SCOPES
 from ..models import DenCharacter, Owner

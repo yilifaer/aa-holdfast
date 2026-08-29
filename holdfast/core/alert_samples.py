@@ -19,11 +19,11 @@ from django.utils import timezone
 from ..models import (
     AlertCategory,
     DenSlot,
+    HoldfastConfig,
     MercenaryDen,
     Skyhook,
     SovCampaign,
     SovHub,
-    HoldfastConfig,
     SovSystem,
 )
 from .alerts import COLOR_DANGER, COLOR_INFO, COLOR_WARNING, _embed, _send

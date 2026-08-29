@@ -14,12 +14,11 @@ to install a second app to use this one.
 
 import logging
 
+from allianceauth.authentication.models import CharacterOwnership
+from allianceauth.eveonline.models import EveCharacter, EveCorporationInfo
 from django.contrib import messages
 from django.shortcuts import redirect, render
 from esi.decorators import token_required
-
-from allianceauth.authentication.models import CharacterOwnership
-from allianceauth.eveonline.models import EveCharacter, EveCorporationInfo
 
 from ..app_settings import HOLDFAST_DEN_ESI_SCOPES, HOLDFAST_ESI_SCOPES
 from ..models import DenCharacter, Owner

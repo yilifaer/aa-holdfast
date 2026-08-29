@@ -18,7 +18,6 @@ Budgets here are small on purpose: the ``char-structure`` bucket allows only
 import logging
 from datetime import timedelta
 
-from django.db import transaction
 from django.utils import timezone
 from esi.exceptions import HTTPNotModified
 from eveuniverse.models import EvePlanet
@@ -33,10 +32,10 @@ from ..models import (
     DenCharacter,
     DenEvent,
     DenSlot,
+    HoldfastConfig,
     MercenaryDen,
     MercenaryTacticalOperation,
     Skyhook,
-    HoldfastConfig,
 )
 from ..providers import esi
 from .esi_sync import ESIBucketLimitException

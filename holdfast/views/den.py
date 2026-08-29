@@ -8,15 +8,14 @@ every member who is farming where.
 
 from datetime import timedelta
 
+from allianceauth.authentication.models import CharacterOwnership
+from allianceauth.eveonline.models import EveCharacter
 from django.contrib import messages
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 from esi.decorators import token_required
-
-from allianceauth.authentication.models import CharacterOwnership
-from allianceauth.eveonline.models import EveCharacter
 
 from ..app_settings import HOLDFAST_DEN_ESI_SCOPES
 from ..core.notifications import invalidate_badges, notify_user
@@ -27,22 +26,22 @@ from ..models import (
     DenEvent,
     DenOperator,
     DenSlot,
+    HoldfastConfig,
     MercenaryDen,
     MercenaryTacticalOperation,
     Skyhook,
-    HoldfastConfig,
+    Webhook,
 )
 from ..tasks import update_den_character as update_den_character_task
-from ..models import Webhook
 from .common import (
-    routes_for_section,
-    save_routes,
     den_can_manage,
     den_can_see_list,
     den_can_view_all,
     own_den_characters,
     own_dens,
     require_any,
+    routes_for_section,
+    save_routes,
     visible_slots,
 )
 

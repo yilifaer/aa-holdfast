@@ -20,7 +20,6 @@ from django.core.exceptions import PermissionDenied
 
 from ..models import DenSlot, Owner, Skyhook, SovHub
 
-
 # --------------------------------------------------------------------------
 # Tiers
 # --------------------------------------------------------------------------

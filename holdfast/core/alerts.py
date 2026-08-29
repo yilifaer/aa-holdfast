@@ -16,8 +16,9 @@ Either way an operator never gets the same warning twice an hour.
 import logging
 from datetime import timedelta
 
+from dhooks_lite import Embed, Field, Footer
+from dhooks_lite import Webhook as DiscordWebhook
 from django.utils import timezone
-from dhooks_lite import Embed, Field, Footer, Webhook as DiscordWebhook
 
 from ..app_settings import (
     HOLDFAST_ADM_ALERT_THRESHOLD,
@@ -25,20 +26,16 @@ from ..app_settings import (
     HOLDFAST_SKYHOOK_THEFT_LEAD_MINUTES,
 )
 from ..models import (
+    CATEGORY_SECTIONS,
     AlertCategory,
-    SovCampaign,
     AlertLog,
     AlertRoute,
-    CATEGORY_SECTIONS,
-    DenEvent,
-    MercenaryDen,
-    MercenaryTacticalOperation,
+    HoldfastConfig,
     PowerState,
     ReagentThreshold,
     Skyhook,
-    SkyhookState,
+    SovCampaign,
     SovHub,
-    HoldfastConfig,
     SovSystem,
     Webhook,
 )

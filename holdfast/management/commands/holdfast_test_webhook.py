@@ -1,7 +1,7 @@
 """Post a dummy alert so you can confirm the Discord side works."""
 
-from django.core.management.base import BaseCommand
 from dhooks_lite import Field
+from django.core.management.base import BaseCommand
 
 from holdfast.core.alerts import COLOR_INFO, _embed, _send
 

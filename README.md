@@ -199,21 +199,24 @@ Each section has its own settings page behind its `*_manage` permission, so an a
 **Every den route in ESI is character scoped.** There is no corporation or public equivalent, and no notification type for "somebody anchored a den next to your skyhook". That shapes the whole feature:
 
 - **Our own dens** fill in automatically, but only from each operator's own token.
-- **Anyone else's den** is invisible to ESI and gets recorded by hand.
-- **The only automatic tell** that a hostile den exists is its side effect: from anarchy level 2 it siphons the workforce of the skyhook it is attached to, so a sustained shortfall against that skyhook's own historic peak is worth a warning.
+- **Every other den** is invisible to ESI and gets recorded by hand -- and most of them are friendly. An alliance usually knows exactly who runs a den long before that person registers a token here, so a hand record says who it is and whether they are one of ours. A record is superseded the day its operator does register: a den the app can read outranks a note somebody typed.
+- **Two automatic tells** that a den is taking workforce, since from anarchy level 2 it siphons the skyhook it sits on:
+  - An untouched skyhook always reports a workforce that is a round multiple of ten. A percentage off it usually is not, so an un-round figure means a den, with no history needed at all. Reported as `measured`.
+  - That is blind when the base was a multiple of a hundred (9200 -> 8280 is still round). Against a peak the app recorded itself, the ratio then lands exactly on a known rate. Reported as `inferred`, because unlike the arithmetic it trusts the peak to have been clean.
+  - A drop no rate explains is reported as `suspected` and named as such.
 
 ### Slots and claims
 
 Dens anchor within 10 km of a skyhook, and only on **temperate** planets, so the set of possible den sites is exactly the set of temperate-planet skyhooks you hold. Those become slots automatically; nobody maintains a list.
 
-A slot moves through **free -> claim pending -> assigned -> anchored**, or **hostile** when someone else got there first.
+A slot moves through **free -> claim pending -> assigned -> anchored**. It reads **recorded** when a den is on it that only a person has told us about, and **hostile** when that den belongs to someone outside the alliance.
 
 1. A member joins the *Den Operators* group through Alliance Auth's normal group request.
 2. They claim a free slot. The claim goes through EVE SSO up front, so an approved claim is live immediately rather than waiting on someone to come back and authorise.
 3. A den manager approves. Approving one applicant automatically rejects everyone else queued on that slot.
 4. Once anchored, the den's development level, anarchy level, state and reinforcement timer appear on the Dens page and the dashboard.
 
-An approved claim with nothing anchored after `den_anchor_grace_days` is flagged in the UI. It is never revoked automatically -- that is a manager's call.
+An approved claim with nothing anchored after `den_anchor_grace_days` is flagged in the UI. It is never revoked automatically -- that is a manager's call, and there is a button for it. Revoking cannot unanchor anything, so the slot keeps saying *revoked, den still up* until the operator takes it down. An applicant whose claim was turned down can clear it off their own page; the row stays for anyone reviewing the history.
 
 ### Den events
 
@@ -223,7 +226,7 @@ Three things can happen to a den, and each has exactly one authoritative source.
 |---|---|---|
 | Under attack now | `MercenaryDenAttacked` notification | The den route carries no HP; this is the only signal |
 | Reinforced | den route, `state == Paused` | Survives notification roll-off; the notification is recorded silently |
-| New tactical operation | MTO route, `state == Available` | Carries the expiry and dungeon type the notification lacks |
+| New tactical operation | MTO route, `state` is `Available` or `Started` | Carries the expiry the notification lacks. Both live states count: started is not finished, and it still runs against a clock |
 
 EVE stores notifications server-side, so nothing is missed while an operator is logged out. Operators authorise three scopes at claim time -- `esi-structures.read_character.v1`, `esi-activities.read_character.v1` and `esi-characters.read_notifications.v1` -- all at once, because adding a scope later means making every operator re-authorise.
 
@@ -233,7 +236,17 @@ Create a webhook in Django admin (*Holdfast → Webhooks*) with a Discord channe
 
 ```bash
 python manage.py holdfast_test_webhook
+python manage.py holdfast_test_alerts             # one sample of every alert
+python manage.py holdfast_import_dens dens.csv    # load a hand-kept den census
 ```
+
+`holdfast_import_dens` takes a CSV of `planet,owner,corporation,hostile` and
+records a den on each matching slot. Most alliances already keep this in a
+spreadsheet. Rows whose planet does not match a slot are reported rather than
+guessed at -- planet names are full of characters a survey sheet gets wrong
+(`0` for `O`, `O` for `Q`), and attaching a record to the wrong planet is worse
+than not importing it. Add `--clear-missing` when the file is a full census,
+and `--dry-run` to see what would change.
 
 Five checks run on the alert task:
 
@@ -296,6 +309,7 @@ python manage.py holdfast_test_webhook
 - Planets are not bulk-imported by django-eveuniverse, so each new skyhook costs one extra ESI call to resolve its planet name. The result is stored permanently, so it happens once per skyhook, ever.
 - Only systems held by a tracked alliance are stored from the sovereignty map. Keeping all 5485 would mean pointless disk churn.
 - The raidable list lives in Redis rather than the database — ~200 rows that turn over every few minutes.
+- A tactical operation's `dungeon_type_id` indexes dungeons, not inventory types. Looking it up in the type tables returns whatever item shares the number (12367 comes back as the skill *Explosive Shield Compensation*), and no route names a dungeon, so it is shown as a number.
 
 ## Relationship to aa-structures
 

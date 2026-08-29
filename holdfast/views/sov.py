@@ -8,23 +8,22 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from ..models import (
+    HoldfastConfig,
     PowerState,
     Skyhook,
     SovCampaign,
-    HoldfastConfig,
     SovSystem,
     SystemCostIndex,
+    Webhook,
 )
-from ..models import Webhook
 from .common import (
+    require_any,
     routes_for_section,
     save_routes,
-    require_any,
     sov_can_manage,
     sov_can_view_all,
     visible_alliance_ids,
     visible_hubs,
-    visible_skyhooks,
 )
 
 SOV_ANY = ("sov_basic", "sov_officer", "sov_manage")

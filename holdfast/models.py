@@ -2,15 +2,14 @@
 
 from datetime import timedelta
 
+from allianceauth.authentication.models import CharacterOwnership
+from allianceauth.eveonline.models import EveCharacter, EveCorporationInfo
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
 from django.utils import timezone as timezone_module
 from esi.models import Token
 from eveuniverse.models import EvePlanet, EveSolarSystem, EveType
-
-from allianceauth.authentication.models import CharacterOwnership
-from allianceauth.eveonline.models import EveCharacter, EveCorporationInfo
 
 from .app_settings import HOLDFAST_ESI_SCOPES
 
@@ -48,8 +47,13 @@ TIMEZONE_ZONES = {
 }
 
 
-class General(models.Model):
-    """Permission anchor. Not a real table."""
+class General(models.Model):  # noqa: DJ008 -- never instantiated, see below
+    """Permission anchor. Not a real table.
+
+    Alliance Auth's convention for declaring an app's permissions: an unmanaged
+    model with no fields, whose Meta carries the permission list. Nothing is
+    ever instantiated, so it has no ``__str__`` to write.
+    """
 
     class Meta:
         managed = False
