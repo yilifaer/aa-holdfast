@@ -277,7 +277,11 @@ A row is created automatically the first time a reagent is seen on a skyhook, se
 
 ## Settings
 
-All optional; defaults shown.
+Most of what an alliance retunes lives on the three in-app settings pages, not
+here: fuel bands, per-reagent theft bars, the theft-window horizon, siphon
+thresholds, the claim grace period, and which Discord channel each alert
+category goes to. The values below are the ones that shape how the app talks to
+ESI, and they belong in `local.py`. All optional; defaults shown.
 
 ```python
 HOLDFAST_ESI_COMPATIBILITY_DATE = "2026-08-18"   # must be >= 2026-05-19
@@ -286,7 +290,8 @@ HOLDFAST_SKYHOOK_THEFT_LEAD_MINUTES = 45
 HOLDFAST_SKYHOOK_MIN_UNSECURED = 100              # fallback only; see per-reagent bars
 HOLDFAST_DETAIL_CALLS_PER_RUN = 50               # per owner, per sync run
 HOLDFAST_DEN_DETAIL_CALLS_PER_RUN = 10           # per den operator, per sync run
-HOLDFAST_DEN_NOTIFICATION_MAX_AGE_HOURS = 24     # ignore older ones on first sync
+HOLDFAST_DEN_NOTIFICATION_MAX_AGE_HOURS = 24     # older than this is backfill
+HOLDFAST_DEN_FIRST_SYNC_GRACE_MINUTES = 90       # on an operator's first sync
 HOLDFAST_ADM_ALERT_THRESHOLD = 3.0               # None disables
 HOLDFAST_TRACK_EXTRA_ALLIANCE_IDS = []           # extra alliances for the ADM page
 HOLDFAST_RAIDABLE_CACHE_SECONDS = 300

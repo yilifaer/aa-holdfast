@@ -57,9 +57,11 @@ def _tripped(skyhook, rules):
 
 @require_any(*SKYHOOK_FULL)
 def dashboard(request):
-    """Everything stealable in the next 24 hours, plus anything under attack."""
+    """Everything stealable inside the configured horizon, plus anything under attack."""
+    config = HoldfastConfig.get_solo()
+    hours = config.skyhook_theft_horizon_hours
     now = timezone.now()
-    horizon = now + timedelta(hours=24)
+    horizon = now + timedelta(hours=hours)
     rules = _thresholds()
     items = []
     upcoming = []
@@ -123,6 +125,7 @@ def dashboard(request):
             request,
             items=items,
             upcoming=upcoming,
+            horizon_hours=hours,
             item_count=len(items),
             open_now=sum(1 for u in upcoming if u["is_open"]),
             tracked_count=len(tracked),
@@ -257,6 +260,15 @@ def settings_view(request):
 def settings_save(request):
     config = HoldfastConfig.get_solo()
     errors = []
+
+    raw = request.POST.get("skyhook_theft_horizon_hours", "").strip()
+    try:
+        hours = int(raw)
+        if not 1 <= hours <= 168:
+            raise ValueError
+        config.skyhook_theft_horizon_hours = hours
+    except ValueError:
+        errors.append(f"Horizon: '{raw}' is not a whole number of hours from 1 to 168")
 
     raw = request.POST.get("skyhook_theft_lead_minutes", "").strip()
     try:

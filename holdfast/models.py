@@ -679,6 +679,13 @@ class HoldfastConfig(models.Model):
     )
 
     # --- skyhooks ---
+    # How far ahead the dashboard looks for theft windows. Also drives the
+    # sidebar badge, so the number on the menu and the rows on the page always
+    # describe the same stretch of time.
+    skyhook_theft_horizon_hours = models.IntegerField(
+        default=24,
+        help_text="How far ahead to list theft windows, in hours.",
+    )
     skyhook_theft_lead_minutes = models.IntegerField(
         default=45,
         help_text="How long before a theft window opens to warn.",

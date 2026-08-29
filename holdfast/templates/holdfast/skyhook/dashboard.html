@@ -21,9 +21,14 @@
         </a>
     </div>
 
-    <div class="holdfast-section-title">{% translate "Stealable in the next 24 hours" %}</div>
+    {# The heading has to follow the setting, or it will quietly lie about the table under it. #}
+    <div class="holdfast-section-title">
+        {% blocktranslate %}Stealable in the next {{ horizon_hours }} hours{% endblocktranslate %}
+    </div>
     {% if not upcoming %}
-        <div class="holdfast-empty">{% translate "No theft window opens in the next 24 hours." %}</div>
+        <div class="holdfast-empty">
+            {% blocktranslate %}No theft window opens in the next {{ horizon_hours }} hours.{% endblocktranslate %}
+        </div>
     {% else %}
         <div class="table-responsive">
             <table class="table table-sm table-hover align-middle" data-filterable

@@ -53,6 +53,12 @@
                 <input type="number" min="0" step="5" name="skyhook_theft_lead_minutes" class="form-control"
                        value="{{ config.skyhook_theft_lead_minutes }}">
             </div>
+            <div class="col-md-4">
+                <label class="form-label">{% translate "List theft windows this far ahead (hours)" %}</label>
+                <input type="number" min="1" max="168" step="1" name="skyhook_theft_horizon_hours" class="form-control"
+                       value="{{ config.skyhook_theft_horizon_hours }}">
+                <div class="form-text">{% translate "Drives the dashboard table and the sidebar badge together. 1 to 168." %}</div>
+            </div>
         </div>
         <div class="form-check form-switch mb-4">
             <input class="form-check-input" type="checkbox" name="skyhook_discord_enabled" id="skd" {% if config.skyhook_discord_enabled %}checked{% endif %}>

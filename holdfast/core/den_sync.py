@@ -18,6 +18,7 @@ Budgets here are small on purpose: the ``char-structure`` bucket allows only
 import logging
 from datetime import timedelta
 
+import yaml
 from django.utils import timezone
 from esi.exceptions import HTTPNotModified
 from eveuniverse.models import EvePlanet
@@ -267,10 +268,16 @@ def sync_notifications(den_character: DenCharacter, token) -> int:
     runs on a schedule rather than on demand.
     """
     try:
+        # force_refresh, for the reason the sov hub listing gives at length:
+        # django-esi banks the ETag as soon as a response arrives, so anything
+        # that reads this list and does not record what it saw leaves a 304
+        # behind it -- and the events in that response are then invisible
+        # until CCP sends a newer one. A listing that decides whether an event
+        # exists cannot be allowed to go stale that way.
         result = esi.client.Character.GetCharactersCharacterIdNotifications(
             character_id=den_character.character.character_id, token=token
-        ).result()
-    except HTTPNotModified:
+        ).result(force_refresh=True)
+    except HTTPNotModified:  # pragma: no cover - unreachable with force_refresh
         return 0
     except ESIBucketLimitException:
         logger.warning("%s: notification bucket exhausted", den_character)
@@ -320,17 +327,44 @@ def sync_notifications(den_character: DenCharacter, token) -> int:
     return created
 
 
-def _den_id_from_text(text: str):
-    """Dig the den's item ID out of the notification's YAML-ish body."""
+def parse_notification_body(text: str) -> dict:
+    """Parse a notification body. It is YAML, anchors and all.
+
+    A real ``MercenaryDenAttacked`` body looks like this::
+
+        aggressorAllianceName: <a href="showinfo:16159//99003995">Invidia</a>
+        aggressorCharacterID: 2116759862
+        armorPercentage: 100.0
+        itemID: &id001 1053328404172
+        mercenaryDenShowInfoData: [showinfo, 85230, *id001]
+        shieldPercentage: 94.96407739693383
+
+    Note ``itemID``, not ``mercenaryDenID``, and note the YAML anchor in front
+    of the number. Scanning lines for a key and calling ``.isdigit()`` on what
+    follows -- which is what this used to do -- finds the right line and then
+    rejects ``&id001 1053328404172``, so the event lands with no den attached.
+    Handing the whole thing to a YAML parser resolves the anchor and gets the
+    other fields for free.
+    """
     if not text:
-        return None
-    for line in text.splitlines():
-        line = line.strip()
-        for key in ("mercenaryDenID:", "structureID:", "itemID:"):
-            if line.startswith(key):
-                value = line[len(key):].strip()
-                if value.isdigit():
-                    return int(value)
+        return {}
+    try:
+        parsed = yaml.safe_load(text)
+    except yaml.YAMLError:
+        logger.warning("Could not parse a notification body as YAML", exc_info=True)
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _den_id_from_text(text: str):
+    """The den's item ID, from whichever key this notification type uses."""
+    body = parse_notification_body(text)
+    for key in ("mercenaryDenID", "itemID", "structureID"):
+        value = body.get(key)
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str) and value.isdigit():
+            return int(value)
     return None
 
 

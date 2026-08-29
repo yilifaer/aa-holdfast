@@ -124,7 +124,11 @@ def skyhook_count(user) -> int:
     def build():
         owners = _owner_ids(user)
         now = timezone.now()
-        horizon = now + timedelta(hours=24)
+        # The same window the dashboard lists, so the badge and the page
+        # cannot disagree about how many things are coming up.
+        horizon = now + timedelta(
+            hours=HoldfastConfig.get_solo().skyhook_theft_horizon_hours
+        )
         total = Skyhook.objects.filter(owner_id__in=owners).exclude(
             state__in=["Unspecified", "ShieldVulnerable"]
         ).count()

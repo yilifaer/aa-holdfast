@@ -20,6 +20,7 @@ New tactical op      MTO route, ``state == Available``      Carries the expiry
 """
 
 import logging
+import re
 from datetime import timedelta
 
 from dhooks_lite import Field
@@ -43,9 +44,17 @@ from .alerts import (
     _mark_sent,
     _send,
 )
+from .den_sync import parse_notification_body
 from .notifications import invalidate_badges, notify_user
 
 logger = logging.getLogger(__name__)
+
+
+def _strip_markup(value):
+    """EVE writes names as showinfo links; the channel wants the name."""
+    if not value:
+        return ""
+    return re.sub(r"<[^>]+>", "", str(value)).strip()
 
 
 def check_den_attacks() -> int:
@@ -59,9 +68,34 @@ def check_den_attacks() -> int:
         den = event.den
         where = den.planet_name if den else "an unknown planet"
         system = den.system_name if den else None
+        body = parse_notification_body(event.text)
         fields = [
             Field(name="Operator", value=str(event.den_character), inline=True),
         ]
+
+        # The notification carries the damage state and who is shooting. That
+        # is the whole reason to read notifications rather than the den route,
+        # which has no HP at all -- so none of it should go to waste.
+        layers = [
+            (name, body.get(f"{key}Percentage"))
+            for name, key in (("Shield", "shield"), ("Armor", "armor"), ("Hull", "hull"))
+        ]
+        if any(value is not None for _, value in layers):
+            fields.append(
+                Field(
+                    name="Shield / Armor / Hull",
+                    value=" / ".join(
+                        f"{value:.0f}%" if value is not None else "?"
+                        for _, value in layers
+                    ),
+                    inline=True,
+                )
+            )
+        attacker = _strip_markup(
+            body.get("aggressorCorporationName") or body.get("aggressorAllianceName")
+        )
+        if attacker:
+            fields.append(Field(name="Attacker", value=attacker, inline=True))
         if den:
             fields.append(Field(name="System", value=den.system_name, inline=True))
             fields.append(
