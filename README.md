@@ -231,7 +231,9 @@ EVE stores notifications server-side, so nothing is missed while an operator is 
 
 ## Alerts
 
-Create a webhook in Django admin (*Holdfast → Webhooks*) with a Discord channel webhook URL, then:
+Add a channel on any of the three settings pages -- Discord gives you the URL
+under *Channel Settings → Integrations → Webhooks* -- then choose which alert
+categories go down it. Nothing here needs a Django superuser.
 
 ```bash
 python manage.py holdfast_test_webhook

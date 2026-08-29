@@ -282,7 +282,6 @@ def check_workforce_siphon() -> int:
             shortfall = skyhook.workforce_shortfall
         known_den = MercenaryDen.objects.filter(skyhook_id=skyhook.skyhook_id).first()
         slot = getattr(skyhook, "den_slot", None)
-        holder = slot.holder_name if slot else None
         ours = bool(known_den or (slot and slot.recorded_den))
 
         # Knowing whose den it is changes the wording, not whether to speak.
@@ -299,24 +298,9 @@ def check_workforce_siphon() -> int:
                     else f"Workforce shortfall: {skyhook.planet_name}"
                 ),
                 description=(
-                    (
-                        f"The den at **{skyhook.planet_name}** has started "
-                        f"taking workforce: **{shortfall:,} a cycle** off this "
-                        f"skyhook.\n"
-                        f"{f'**{holder}**' if holder else 'A den we know about'}"
-                        " runs it. That output was feeding our own "
-                        "sovereignty, so this is worth a word rather than a "
-                        "fleet."
-                    )
-                    if ours
-                    else (
-                        f"**{skyhook.planet_name}** has been producing "
-                        f"**{shortfall:,} less workforce** "
-                        f"({percent:.0f}% below its own peak).\n"
-                        "No den of ours is anchored there. A hostile den at "
-                        "anarchy level 2 or above siphons workforce exactly "
-                        "like this."
-                    )
+                    f"**{skyhook.planet_name}** is down "
+                    f"**{shortfall:,} workforce a cycle** ({percent:.0f}%)."
+                    + ("" if ours else " Nobody has recorded a den here.")
                 ),
                 color=COLOR_WARNING,
                 fields=[
@@ -327,20 +311,20 @@ def check_workforce_siphon() -> int:
                         f"{skyhook.workforce_high_water:,}",
                         inline=True,
                     ),
+                    Field(name="Den operator", value=slot.holder_label if slot else "unknown", inline=True),
                     Field(
-                        name="Corporation",
+                        name="Skyhook owner",
                         value=skyhook.owner.corporation.corporation_name,
                         inline=True,
                     ),
                     Field(
                         name="How we know",
                         value={
-                            "measured": "the workforce is not a round number "
-                            "-- arithmetic, not a guess",
-                            "inferred": "it fell to exactly 90/80/70% of a "
-                            "peak we recorded ourselves",
-                            "suspected": "below its own peak, but no siphon "
-                            "rate explains the figure",
+                            "measured": "the workforce is not a round number",
+                            "inferred": f"it fell to exactly {100 - percent:.0f}% "
+                            "of its own recorded peak",
+                            "suspected": "below its own peak, but no siphon rate "
+                            "explains the figure",
                         }.get(certainty, "below its own peak"),
                         inline=False,
                     ),
@@ -387,34 +371,27 @@ def check_siphoned_skyhooks() -> int:
         # Who is on it, if anyone knows. Saying "no den of ours is anchored
         # here" while the field underneath names the operator reads as a
         # contradiction, so the sentence follows what we actually know.
-        whose = slot.holder_label if slot else "unknown"
         delivered = _send(
             _embed(
                 title=f"Den siphoning workforce: {skyhook.planet_name}",
                 description=(
-                    f"**{skyhook.planet_name}** is producing "
-                    f"**{skyhook.effective_workforce:,}** workforce against a base of "
-                    f"**{skyhook.workforce_base:,}** -- a mercenary den is taking "
-                    f"**{skyhook.workforce_siphon_percent:.0f}%**, "
-                    f"{skyhook.siphoned_amount:,} a cycle. "
-                    + (
-                        f"Run by {whose}."
-                        if whose != "unknown"
-                        else "A den is here -- this alert is proof of it -- "
-                        "but nobody has recorded whose."
-                    )
+                    f"**{skyhook.planet_name}** is down "
+                    f"**{skyhook.siphoned_amount:,} workforce a cycle** "
+                    f"({skyhook.workforce_siphon_percent:.0f}%)."
                 ),
                 color=COLOR_WARNING,
                 fields=[
                     Field(name="System", value=skyhook.system_name, inline=True),
+                    Field(name="Den operator", value=slot.holder_label if slot else "unknown", inline=True),
                     Field(
-                        name="Corporation",
+                        name="Skyhook owner",
                         value=skyhook.owner.corporation.corporation_name,
                         inline=True,
                     ),
                     Field(
-                        name="Den slot",
-                        value=slot.holder_label if slot else "not a temperate planet",
+                        name="Now / base",
+                        value=f"{skyhook.effective_workforce:,} / "
+                        f"{skyhook.workforce_base:,}",
                         inline=True,
                     ),
                 ],

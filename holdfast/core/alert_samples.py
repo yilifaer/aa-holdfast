@@ -375,27 +375,24 @@ def _den_siphon():
     corporation = (
         skyhook.owner.corporation.corporation_name if skyhook else "Example Corporation"
     )
-    whose = slot.holder_label if slot else "unknown"
+    # Same shape as the real alert, field for field: a sample that reads
+    # differently is not a sample of anything.
     return _embed(
         title=f"Den siphoning workforce: {planet}",
         description=(
-            f"**{planet}** is producing **{now_value:,}** workforce against a "
-            f"base of **{base:,}** -- a mercenary den is taking "
-            f"**{percent:.0f}%**, {base - now_value:,} a cycle. "
-            # An alert that fired at all is proof a den is there. The only
-            # open question is whose, so the sentence never says "none".
-            + (
-                f"Run by {whose}."
-                if whose != "unknown"
-                else "A den is here -- this alert is proof of it -- "
-                "but nobody has recorded whose."
-            )
+            f"**{planet}** is down **{base - now_value:,} workforce a cycle** "
+            f"({percent:.0f}%)."
         ),
         color=COLOR_WARNING,
         fields=[
             Field(name="System", value=system, inline=True),
-            Field(name="Corporation", value=corporation, inline=True),
-            Field(name="Den slot", value=whose, inline=True),
+            Field(name="Den operator", value=slot.holder_label if slot else "unknown", inline=True),
+            Field(name="Skyhook owner", value=corporation, inline=True),
+            Field(
+                name="Now / base",
+                value=f"{now_value:,} / {base:,}",
+                inline=True,
+            ),
         ],
         system_name=system,
         footer_note=TEST_FOOTER,

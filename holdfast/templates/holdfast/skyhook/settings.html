@@ -70,6 +70,10 @@
         <button class="btn btn-primary">{% translate "Save" %}</button>
     </form>
 
+    {% if can_manage %}
+        {% include "holdfast/partials/_webhooks.html" with save_url=holdfast_save_url %}
+    {% endif %}
+
     <form method="post" action="{% url 'holdfast:skyhook_settings_test' %}" class="mt-3">
         {% csrf_token %}
         <button class="btn btn-outline-secondary btn-sm">
