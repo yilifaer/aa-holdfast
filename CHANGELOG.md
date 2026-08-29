@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses
 [semantic versioning](https://semver.org/).
 
+## [0.1.4] - 2026-08-30
+
+Documentation only. No behaviour changes; upgrading is optional.
+
+### Fixed
+
+- Screenshots and the licence link now use absolute URLs. PyPI renders the
+  README on its own, so `docs/images/sov-fuel.png` resolved against pypi.org
+  and every image on the project page was a broken-image icon -- which is the
+  first thing anyone deciding whether to install this would have seen.
+
 ## [0.1.3] - 2026-08-30
 
 Documentation only. No behaviour changes; upgrading is optional.
