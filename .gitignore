@@ -36,3 +36,7 @@ htmlcov/
 .vscode/
 *.swp
 .DS_Store
+
+# The author's own sync-to-the-test-server script. Hardcoded to one
+# machine's paths, useless to anyone else, and kept out of the package.
+deploy.sh
