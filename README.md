@@ -8,6 +8,13 @@
 
 Sovereignty Hub fuel and Orbital Skyhook monitoring for [Alliance Auth](https://gitlab.com/allianceauth/allianceauth), built on the Equinox ESI routes.
 
+![Sovereignty hub fuel](docs/images/sov-fuel.png)
+
+<sub>Every screenshot here comes from a demo install seeded with invented
+systems, corporations and characters. Fuel timers and den holders are
+intelligence, and a real one does not belong in a public README.</sub>
+
+
 ## Why this exists
 
 CCP shipped ESI routes for sovereignty hubs and skyhooks on **2026-05-19**, but almost nobody built on them, because they are invisible unless you ask for them correctly:
@@ -35,7 +42,19 @@ One app, three doors. The sidebar carries **SOV Monitor**, **Skyhook Monitor** a
 | System Cost | `/industry/systems` | **any member** |
 | Settings | live thresholds and notification switches | manager |
 
+![Sovereignty timers](docs/images/sov-timers.png)
+
+<sub>The hub detail route carries no state field, so a running Entosis defence
+event is the only public evidence that one is actually being attacked. Green is
+safe, amber is inside its daily window, red has a campaign against it.</sub>
+
 ### Skyhook Monitor
+
+![Skyhook dashboard](docs/images/skyhook-dashboard.png)
+
+<sub>Theft windows inside the configured horizon, amber where a reagent is
+over its bar. The feed underneath is the same data ordered by what happens
+next.</sub>
 
 | Page | Source | Who sees it |
 |---|---|---|
@@ -48,6 +67,12 @@ One app, three doors. The sidebar carries **SOV Monitor**, **Skyhook Monitor** a
 Workforce and power skyhooks are left out of the list on purpose. They hold no stock and ESI gives them no theft window, so on a real 413-skyhook alliance including them means 362 rows of noise around the 51 that matter.
 
 ### Den Monitor
+
+![Den admin](docs/images/den-admin.png)
+
+<sub>Two dens the app can see and two free sites. `auto` came from a token,
+`manual` from somebody typing it. `measured` and `inferred` are the two
+siphon detectors, and the difference between them is how sure they are.</sub>
 
 | Page | Shows | Who sees it |
 |---|---|---|
