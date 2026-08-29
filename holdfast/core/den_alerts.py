@@ -92,7 +92,7 @@ def check_den_attacks() -> int:
             title=f"Your mercenary den is under attack: {where}",
             message=(
                 f"A den at {where} was being shot at "
-                f"{event.timestamp:%Y-%m-%d %H:%M} UTC. It was not reinforced "
+                f"{event.timestamp:%Y-%m-%d %H:%M} EVE. It was not reinforced "
                 "at the time, so there may still be a window to save it."
             ),
             level="danger",
@@ -152,7 +152,7 @@ def check_den_reinforced() -> int:
             message=(
                 f"{den.planet_name} in {den.system_name} is reinforced."
                 + (
-                    f" It comes out at {den.reinforce_end:%Y-%m-%d %H:%M} UTC."
+                    f" It comes out at {den.reinforce_end:%Y-%m-%d %H:%M} EVE."
                     if den.reinforce_end
                     else ""
                 )
