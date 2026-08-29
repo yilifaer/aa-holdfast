@@ -21,9 +21,7 @@ from dhooks_lite import Webhook as DiscordWebhook
 from django.utils import timezone
 
 from ..app_settings import (
-    HOLDFAST_ADM_ALERT_THRESHOLD,
     HOLDFAST_SKYHOOK_MIN_UNSECURED,
-    HOLDFAST_SKYHOOK_THEFT_LEAD_MINUTES,
 )
 from ..models import (
     CATEGORY_SECTIONS,
@@ -268,8 +266,37 @@ def check_hub_fuel() -> int:
     return sent
 
 
+def _den_cause_field(hub, config):
+    """Name the siphon, when there is one and the setting asks for it.
+
+    Returns a list, so it drops straight into ``fields=`` whether or not it
+    found anything.
+    """
+    if not config.notify_upgrade_den_caused:
+        return []
+    from .siphon import siphons_in_system
+
+    siphoned = siphons_in_system(hub)
+    if not siphoned:
+        return []
+    return [
+        Field(
+            name="Likely cause",
+            value="\n".join(
+                f"{s.planet_name}: {s.siphon_estimate[0]:.0f}% of its workforce "
+                f"({s.den_slot.holder_label if getattr(s, 'den_slot', None) else 'unknown'})"
+                for s in siphoned
+            )[:1024],
+            inline=False,
+        )
+    ]
+
+
 def check_hub_upgrades() -> int:
     """Edge-triggered warning for upgrades that went unpowered."""
+    config = HoldfastConfig.get_solo()
+    if not config.notify_upgrade_offline:
+        return 0
     sent = 0
     for hub in SovHub.objects.select_related("owner__corporation", "eve_solar_system"):
         starved = [u for u in hub.upgrades.all() if u.power_state == PowerState.LOW]
@@ -302,7 +329,8 @@ def check_hub_upgrades() -> int:
                         value=f"{hub.workforce_allocated:,} / {hub.workforce_available:,}",
                         inline=True,
                     ),
-                ],
+                ]
+                + _den_cause_field(hub, config),
                 system_name=hub.system_name,
             ),
             category=AlertCategory.SOV_UPGRADE,
@@ -328,8 +356,9 @@ def check_skyhook_theft() -> int:
     fall back to HOLDFAST_SKYHOOK_MIN_UNSECURED.
     """
     sent = 0
+    config = HoldfastConfig.get_solo()
     now = timezone.now()
-    horizon = now + timedelta(minutes=HOLDFAST_SKYHOOK_THEFT_LEAD_MINUTES)
+    horizon = now + timedelta(minutes=config.skyhook_theft_lead_minutes)
     rules = {r.type_id: r for r in ReagentThreshold.objects.select_related("eve_type")}
 
     candidates = Skyhook.objects.filter(
@@ -435,13 +464,16 @@ def check_skyhook_attacks() -> int:
 
 
 def check_adm() -> int:
-    if HOLDFAST_ADM_ALERT_THRESHOLD is None:
+    # Read from the settings page, not from local.py. Leaving the field empty
+    # there is how an alliance turns this off, and it did nothing.
+    threshold = HoldfastConfig.get_solo().adm_alert_threshold
+    if threshold is None:
         return 0
     sent = 0
     for system in SovSystem.objects.select_related("eve_solar_system"):
         adm = system.activity_defense_multiplier
         key = f"adm:{system.solar_system_id}"
-        if adm is None or adm >= HOLDFAST_ADM_ALERT_THRESHOLD:
+        if adm is None or adm >= threshold:
             _disarm(key)
             continue
         if _already_sent(key):
@@ -451,7 +483,7 @@ def check_adm() -> int:
                 title=f"ADM low: {system.system_name}",
                 description=(
                     f"**{system.system_name}** is sitting at ADM **{adm:.2f}**, "
-                    f"below the {HOLDFAST_ADM_ALERT_THRESHOLD} threshold."
+                    f"below the {threshold} threshold."
                 ),
                 color=COLOR_WARNING,
                 fields=[

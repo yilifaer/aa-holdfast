@@ -15,10 +15,6 @@ HOLDFAST_ESI_COMPATIBILITY_DATE = _setting(
     "HOLDFAST_ESI_COMPATIBILITY_DATE", ESI_COMPATIBILITY_DATE
 )
 
-# Hours-of-fuel-left thresholds that trigger a sov hub fuel alert. Each hub
-# alerts at most once per threshold band per refuelling.
-HOLDFAST_FUEL_ALERT_THRESHOLDS = _setting("HOLDFAST_FUEL_ALERT_THRESHOLDS", [48, 24, 6])
-
 # How long before a skyhook's theft window opens we warn, in minutes.
 HOLDFAST_SKYHOOK_THEFT_LEAD_MINUTES = _setting("HOLDFAST_SKYHOOK_THEFT_LEAD_MINUTES", 45)
 
@@ -45,15 +41,20 @@ HOLDFAST_RAIDABLE_CACHE_SECONDS = _setting("HOLDFAST_RAIDABLE_CACHE_SECONDS", 30
 # 100 per run on a 15-minute schedule a 460-structure corporation is fully
 # refreshed in about 75 minutes, close to CCP's own one hour cache, using a
 # third of the bucket.
-HOLDFAST_DETAIL_CALLS_PER_RUN = _setting("HOLDFAST_DETAIL_CALLS_PER_RUN", 100)
-
-# Seconds between owner ESI syncs. The corp structure routes are cached for one
-# hour server-side, so anything shorter returns identical data.
-HOLDFAST_OWNER_SYNC_SECONDS = _setting("HOLDFAST_OWNER_SYNC_SECONDS", 3600)
+# Detail calls per owner per run. ESI charges two rate-limit tokens for a
+# successful response, so 60 calls is about 120 tokens of the 300-per-15-
+# minutes corporation bucket -- leaving most of it for the other apps that
+# share it. The old default of 100 was chosen when a call was believed to
+# cost one token, and spent two thirds of the bucket rather than one third.
+HOLDFAST_DETAIL_CALLS_PER_RUN = _setting("HOLDFAST_DETAIL_CALLS_PER_RUN", 60)
 
 # Stagger owner syncs by this many seconds so a big alliance doesn't fire every
 # corp's requests in the same instant.
-HOLDFAST_OWNER_SYNC_JITTER_SECONDS = _setting("HOLDFAST_OWNER_SYNC_JITTER_SECONDS", 300)
+# Spread owners out so they do not all reach for the same bucket at once.
+# Kept well under the gap between runs: at five minutes, two runs of a
+# fifteen-minute schedule could land ten minutes apart and overlap inside
+# ESI's sliding window.
+HOLDFAST_OWNER_SYNC_JITTER_SECONDS = _setting("HOLDFAST_OWNER_SYNC_JITTER_SECONDS", 120)
 
 # Planet names to resolve per run. The universe route is public with no
 # declared rate limit, but each planet is a separate HTTP call, so it gets its

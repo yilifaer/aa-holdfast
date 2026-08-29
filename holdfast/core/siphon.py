@@ -101,3 +101,34 @@ def apply_to(skyhook) -> bool:
     skyhook.workforce_siphon_percent = percent
     skyhook.workforce_base = base
     return True
+
+
+def starved_upgrades_in_system(skyhook):
+    """Sovereignty upgrades that are unpowered in this skyhook's own system.
+
+    A skyhook's workforce and power go to the hub in its system, so a den
+    taking a cut of that output is one plausible reason an upgrade there has
+    dropped offline. Plausible, not proven -- an alliance that simply
+    overbuilt looks identical from here -- which is why the alerts word it as
+    a likely cause and why saying so at all is a setting.
+    """
+    hubs = skyhook.owner.sov_hubs.filter(solar_system_id=skyhook.eve_solar_system_id)
+    return [
+        upgrade
+        for hub in hubs
+        for upgrade in hub.upgrades.all()
+        if upgrade.power_state == "Low"
+    ]
+
+
+def siphons_in_system(hub):
+    """Skyhooks in this hub's system that something is taking workforce from.
+
+    The other direction of the same question, for the sovereignty alerts.
+    """
+    from ..models import Skyhook
+
+    candidates = Skyhook.objects.filter(
+        owner=hub.owner, eve_solar_system_id=hub.solar_system_id
+    ).select_related("eve_planet", "den_slot")
+    return [s for s in candidates if s.is_siphon_suspected]

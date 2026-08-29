@@ -471,7 +471,10 @@ def claim_slot(request, token, slot_pk):
     claim is live immediately, instead of leaving a manager chasing someone to
     come back and authorise.
     """
-    slot = get_object_or_404(DenSlot, pk=slot_pk)
+    # Scoped, not looked up by primary key. The list page filters by
+    # alliance; a write path that does not would let anyone who can guess an
+    # id act on ground that is not theirs.
+    slot = get_object_or_404(visible_slots(request.user), pk=slot_pk)
     if not slot.is_claimable:
         messages.error(request, f"{slot.planet_name} is not available.")
         return redirect("holdfast:den_list")
@@ -571,7 +574,9 @@ def dismiss_claim(request, claim_pk):
 @require_any(*DEN_ADMIN)
 @require_POST
 def decide_claim(request, claim_pk, decision):
-    claim = get_object_or_404(DenClaim, pk=claim_pk)
+    claim = get_object_or_404(
+        DenClaim.objects.filter(slot__in=visible_slots(request.user)), pk=claim_pk
+    )
     now = timezone.now()
     note = request.POST.get("decision_note", "")[:500]
 
@@ -664,7 +669,7 @@ def record_den(request, slot_pk):
     Both kinds go through here: a hostile den, and a friendly one whose
     operator has not registered a token. The form says which.
     """
-    slot = get_object_or_404(DenSlot, pk=slot_pk)
+    slot = get_object_or_404(visible_slots(request.user), pk=slot_pk)
     present = request.POST.get("present") == "1"
     slot.recorded_den = present
     slot.recorded_hostile = present and request.POST.get("hostile") == "1"

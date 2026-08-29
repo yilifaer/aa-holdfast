@@ -213,12 +213,18 @@ def sync_operations(den_character: DenCharacter, token) -> int:
             den_character=den_character
         ).count()
 
-    seen = set()
-    for entry in (e.model_dump() for e in listing.operations):
+    # The listing is the whole truth about which operations exist; the detail
+    # calls only add expiry and type to ones we already know are there. Taking
+    # the id set from the listing up front means a bucket limit part way
+    # through costs us some detail, not the rows themselves. Deleting on what
+    # we managed to fetch made a rate limit look like an operation ending.
+    entries = [e.model_dump() for e in listing.operations]
+    seen = {e["id"] for e in entries if e.get("id")}
+
+    for entry in entries:
         operation_id = entry.get("id")
         if not operation_id:
             continue
-        seen.add(operation_id)
         try:
             detail = esi.client.Activities.GetCharactersMercenaryTacticalOperationsDetail(
                 operation_id=operation_id, character_id=character_id, token=token
@@ -247,11 +253,9 @@ def sync_operations(den_character: DenCharacter, token) -> int:
             },
         )
 
-    removed, _ = (
-        MercenaryTacticalOperation.objects.filter(den_character=den_character)
-        .exclude(operation_id__in=seen)
-        .delete()
-    )
+    MercenaryTacticalOperation.objects.filter(den_character=den_character).exclude(
+        operation_id__in=seen
+    ).delete()
     return len(seen)
 
 

@@ -4,6 +4,46 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses
 [semantic versioning](https://semver.org/).
 
+## [0.1.1] - 2026-08-30
+
+Six bugs from an outside review, all of which this alliance's own numbers hid.
+
+### Fixed
+
+- A hub could be starved of its detail budget for ever. The budget was split
+  between hubs and skyhooks in proportion to their counts, and Python rounds a
+  half to even -- so one hub among 199 skyhooks got `round(100 * 1/200)`, which
+  is zero. Every run. Its fuel was never fetched and never alerted on. There is
+  one queue now, ordered by whatever went longest without a refresh.
+- The rate-limit budget counted calls and called them tokens. ESI charges two
+  tokens for a successful response, so a default run spent about two thirds of
+  the 300-token bucket while the comments claimed one third. The default drops
+  to 60 calls, and the sync jitter to two minutes so two runs of a fifteen
+  minute schedule cannot land inside one sliding window.
+- Eight settings were write-only: the page saved them and nothing read them.
+  The theft lead time and the ADM threshold came from `local.py` instead, and
+  four notification switches did nothing at all. **An install that turned
+  something off on the settings page was still being alerted about it.**
+- Three den write paths looked rows up by primary key with no scope, so anyone
+  who could guess an id could claim, approve, revoke or overwrite a site
+  outside their own alliance. The list pages had always filtered; the writes
+  had not.
+- A rate limit part way through the tactical operation sync deleted every
+  operation it had not reached yet, even though they were still in the listing.
+  The listing is the truth about what exists; the details only decorate it.
+- `HOLDFAST_OWNER_SYNC_SECONDS` and `HOLDFAST_FUEL_ALERT_THRESHOLDS` were
+  defined and documented and read by nothing. Removed.
+
+### Changed
+
+- The README no longer says one install can serve several alliances. Pages
+  filter by alliance but settings, thresholds and Discord channels are global
+  and the alert checks sweep every owner, so two alliances sharing an Auth
+  would get each other's warnings. It says that now instead.
+- The upgrade-offline alert can name a siphoning den as the likely cause, and
+  the siphon alerts can say a sovereignty upgrade went dark with the workforce.
+  Both are what their settings switches always claimed to do.
+
 ## [0.1.0] - 2026-08-29
 
 First release.

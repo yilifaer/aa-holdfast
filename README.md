@@ -203,7 +203,16 @@ Each section has its own ladder, and holding a higher rung implies the lower one
 
 Plus two that cut across: `den_claim` to apply for a den site, and `manage_owners` to register tokens.
 
-Scope is separate from tier. An officer sees the registered corporations in **their own alliance**, not everything on the server, so one install can serve several alliances without mixing them up.
+Scope is separate from tier. An officer sees the registered corporations in
+**their own alliance**, and the den pages will not let anyone read or write a
+site outside it.
+
+**This is one alliance's tool, though.** The pages filter by alliance, but the
+settings, the alert thresholds and the Discord channels are one set for the
+whole install, and the alert checks sweep every owner. Two alliances sharing an
+Auth would get each other's fuel warnings in the same channel and would be
+editing each other's thresholds. If that is your situation, run a second Auth --
+nothing here is built to keep two of you apart.
 
 ### Give the member tier to a State, not a group
 
@@ -334,17 +343,16 @@ ESI, and they belong in `local.py`. All optional; defaults shown.
 
 ```python
 HOLDFAST_ESI_COMPATIBILITY_DATE = "2026-08-18"   # must be >= 2026-05-19
-HOLDFAST_FUEL_ALERT_THRESHOLDS = [48, 24, 6]     # hours of fuel left
 HOLDFAST_SKYHOOK_THEFT_LEAD_MINUTES = 45
 HOLDFAST_SKYHOOK_MIN_UNSECURED = 100              # fallback only; see per-reagent bars
-HOLDFAST_DETAIL_CALLS_PER_RUN = 50               # per owner, per sync run
+HOLDFAST_DETAIL_CALLS_PER_RUN = 60               # per owner, per sync run
 HOLDFAST_DEN_DETAIL_CALLS_PER_RUN = 10           # per den operator, per sync run
 HOLDFAST_DEN_NOTIFICATION_MAX_AGE_HOURS = 24     # older than this is backfill
 HOLDFAST_DEN_FIRST_SYNC_GRACE_MINUTES = 90       # on an operator's first sync
 HOLDFAST_ADM_ALERT_THRESHOLD = 3.0               # None disables
 HOLDFAST_TRACK_EXTRA_ALLIANCE_IDS = []           # extra alliances for the ADM page
 HOLDFAST_RAIDABLE_CACHE_SECONDS = 300
-HOLDFAST_OWNER_SYNC_JITTER_SECONDS = 300
+HOLDFAST_OWNER_SYNC_JITTER_SECONDS = 120
 HOLDFAST_STALE_PRUNE_DAYS = 14
 ```
 

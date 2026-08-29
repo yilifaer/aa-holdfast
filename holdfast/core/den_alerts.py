@@ -255,6 +255,30 @@ def check_mto_available() -> int:
     return sent
 
 
+def _sov_impact_field(skyhook, config):
+    """Say that an upgrade went dark with the workforce, if asked to.
+
+    The connection is plausible rather than proven -- an alliance that simply
+    overbuilt its power budget looks the same from here -- so the wording
+    hedges and the whole thing is a setting.
+    """
+    if not config.notify_den_sov_impact:
+        return []
+    from .siphon import starved_upgrades_in_system
+
+    starved = starved_upgrades_in_system(skyhook)
+    if not starved:
+        return []
+    return [
+        Field(
+            name="Sovereignty impact",
+            value="unpowered in this system: "
+            + ", ".join(u.type_name for u in starved)[:900],
+            inline=False,
+        )
+    ]
+
+
 def check_workforce_siphon() -> int:
     """Flag a skyhook whose workforce has sat below its own peak for a while.
 
@@ -263,8 +287,10 @@ def check_workforce_siphon() -> int:
     workforce, and that shows up as a shortfall against the skyhook's own
     historic best.
     """
-    sent = 0
     config = HoldfastConfig.get_solo()
+    if not config.notify_den_skyhook_impact:
+        return 0
+    sent = 0
     cutoff = timezone.now() - timedelta(hours=config.workforce_drop_grace_hours)
 
     for skyhook in Skyhook.objects.filter(
@@ -328,7 +354,8 @@ def check_workforce_siphon() -> int:
                         }.get(certainty, "below its own peak"),
                         inline=False,
                     ),
-                ],
+                ]
+                + _sov_impact_field(skyhook, config),
                 moments=[("Dropping since", skyhook.workforce_dropped_at)],
                 system_name=skyhook.system_name,
             ),
@@ -353,6 +380,9 @@ def check_siphoned_skyhooks() -> int:
     was already sitting there before this app ever ran. See core.siphon for why
     the arithmetic works.
     """
+    config = HoldfastConfig.get_solo()
+    if not config.notify_den_skyhook_impact:
+        return 0
     sent = 0
     for skyhook in Skyhook.objects.filter(
         workforce_siphon_percent__isnull=False
@@ -394,7 +424,8 @@ def check_siphoned_skyhooks() -> int:
                         f"{skyhook.workforce_base:,}",
                         inline=True,
                     ),
-                ],
+                ]
+                + _sov_impact_field(skyhook, config),
                 system_name=skyhook.system_name,
             ),
             category=AlertCategory.DEN_SIPHON,

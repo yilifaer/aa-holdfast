@@ -28,7 +28,6 @@ import logging
 
 from django.core.cache import cache
 from django.db import transaction
-from django.db.models import F
 from django.utils import timezone
 from esi.exceptions import HTTPNotModified
 from eveuniverse.models import EvePlanet, EveSolarSystem, EveType
@@ -65,19 +64,26 @@ except ImportError:  # pragma: no cover - older django-esi
         pass
 
 
+# What ESI charges per request, not what we assumed. A successful response
+# costs two tokens and a 304 costs one -- so a run of 100 detail calls spends
+# about 200 of the 300-token bucket, not 100 of it. The old accounting was out
+# by a factor of two in the direction that gets you rate limited.
+TOKENS_PER_CALL = 2
+
+
 class DetailBudget:
-    """Counts down the detail calls one sync run is allowed to make."""
+    """Counts down the rate-limit tokens one sync run is allowed to spend."""
 
     def __init__(self, limit: int):
         self.remaining = max(int(limit), 0)
         self.spent = 0
         self.exhausted_by_esi = False
 
-    def take(self) -> bool:
-        if self.remaining <= 0:
+    def take(self, cost: int = TOKENS_PER_CALL) -> bool:
+        if self.remaining < cost:
             return False
-        self.remaining -= 1
-        self.spent += 1
+        self.remaining -= cost
+        self.spent += cost
         return True
 
     @property
@@ -179,23 +185,50 @@ def sync_sov_hub_listing(owner: Owner, token, system_memo) -> int:
     return len(seen_ids)
 
 
-def refresh_sov_hub_details(owner: Owner, token, budget, type_memo) -> int:
-    """Spend budget refreshing the stalest hubs first."""
-    refreshed = 0
-    stalest = SovHub.objects.filter(owner=owner).order_by(
-        F("detail_updated_at").asc(nulls_first=True)
+def refresh_details(owner: Owner, token, budget, type_memo):
+    """Refresh whatever has gone longest without it, hub or skyhook alike.
+
+    This used to split the budget between the two lists in proportion to their
+    sizes, which starved the smaller one: an alliance with one hub and 199
+    skyhooks gave the hub ``round(100 * 1/200)``, and Python rounds a half to
+    even, so the share was zero. Every run. That hub's fuel was never fetched
+    and never alerted on, and nothing anywhere said so.
+
+    One queue ordered by staleness has no shares to get wrong. Whatever waited
+    longest goes first, so a single hub among hundreds of skyhooks comes up
+    every few runs on its own -- and an alliance with no skyhooks at all still
+    spends its whole budget on hubs.
+
+    Returns ``(hubs refreshed, skyhooks refreshed)``.
+    """
+    queue = sorted(
+        [
+            (row.detail_updated_at, index, kind, row)
+            for index, (kind, row) in enumerate(
+                [("hub", h) for h in SovHub.objects.filter(owner=owner)]
+                + [("skyhook", s) for s in Skyhook.objects.filter(owner=owner)]
+            )
+        ],
+        # Never fetched sorts before everything; the index keeps it stable.
+        key=lambda item: (item[0] is not None, item[0] or timezone.now(), item[1]),
     )
-    for hub in stalest:
+
+    hubs_done = hooks_done = 0
+    for _stamp, _index, kind, row in queue:
         if not budget.take():
             break
         try:
-            _fetch_sov_hub_detail(owner, token, hub, type_memo)
+            if kind == "hub":
+                _fetch_sov_hub_detail(owner, token, row, type_memo)
+                hubs_done += 1
+            else:
+                _fetch_skyhook_detail(owner, token, row, type_memo)
+                hooks_done += 1
         except ESIBucketLimitException:
             budget.exhausted_by_esi = True
             logger.warning("%s: ESI bucket exhausted, stopping this run", owner)
             break
-        refreshed += 1
-    return refreshed
+    return hubs_done, hooks_done
 
 
 def _fetch_sov_hub_detail(owner, token, hub, type_memo):
@@ -325,23 +358,6 @@ def sync_skyhook_listing(owner: Owner, token) -> int:
         logger.info("%s: removed %s skyhook(s) no longer owned", owner, removed)
     return len(seen_ids)
 
-
-def refresh_skyhook_details(owner: Owner, token, budget, type_memo) -> int:
-    refreshed = 0
-    stalest = Skyhook.objects.filter(owner=owner).order_by(
-        F("detail_updated_at").asc(nulls_first=True)
-    )
-    for skyhook in stalest:
-        if not budget.take():
-            break
-        try:
-            _fetch_skyhook_detail(owner, token, skyhook, type_memo)
-        except ESIBucketLimitException:
-            budget.exhausted_by_esi = True
-            logger.warning("%s: ESI bucket exhausted, stopping this run", owner)
-            break
-        refreshed += 1
-    return refreshed
 
 
 def _fetch_skyhook_detail(owner, token, skyhook, type_memo):
@@ -483,7 +499,9 @@ def update_owner(owner: Owner, detail_budget: int = None) -> dict:
     token = owner.fetch_token()
     if detail_budget is None:
         detail_budget = HOLDFAST_DETAIL_CALLS_PER_RUN
-    budget = DetailBudget(detail_budget)
+    # The setting is in detail calls, because that is what an operator can
+    # picture. The budget counts tokens, because that is what ESI counts.
+    budget = DetailBudget(detail_budget * TOKENS_PER_CALL)
 
     type_memo: dict = {}
     system_memo: dict = {}
@@ -491,27 +509,14 @@ def update_owner(owner: Owner, detail_budget: int = None) -> dict:
     hubs = sync_sov_hub_listing(owner, token, system_memo)
     skyhooks = sync_skyhook_listing(owner, token)
 
-    total = hubs + skyhooks
-    # Split the budget proportionally so neither list starves the other.
-    hub_share = round(budget.remaining * (hubs / total)) if total else 0
-    hub_budget = DetailBudget(min(hub_share, budget.remaining))
-    hubs_done = refresh_sov_hub_details(owner, token, hub_budget, type_memo)
-    budget.remaining -= hub_budget.spent
-    budget.exhausted_by_esi = hub_budget.exhausted_by_esi
-
-    hooks_done = 0
-    if not budget.exhausted_by_esi:
-        hook_budget = DetailBudget(budget.remaining)
-        hooks_done = refresh_skyhook_details(owner, token, hook_budget, type_memo)
-        budget.remaining -= hook_budget.spent
-        budget.exhausted_by_esi = hook_budget.exhausted_by_esi
+    hubs_done, hooks_done = refresh_details(owner, token, budget, type_memo)
 
     return {
         "sov_hubs": hubs,
         "skyhooks": skyhooks,
         "hub_details": hubs_done,
         "skyhook_details": hooks_done,
-        "complete": (hubs_done + hooks_done) >= total,
+        "complete": (hubs_done + hooks_done) >= (hubs + skyhooks),
         "rate_limited": budget.exhausted_by_esi,
     }
 
