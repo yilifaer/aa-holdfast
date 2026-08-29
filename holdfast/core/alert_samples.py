@@ -361,7 +361,10 @@ def _den_siphon():
         .select_related("eve_planet", "eve_solar_system", "owner__corporation")
         .first()
     )
-    slot = _any_slot()
+    # The slot under the skyhook this sample is built from, not just any slot:
+    # a test ping that names one planet and describes a different planet's
+    # ground is worse than no sample at all.
+    slot = getattr(skyhook, "den_slot", None) or _any_slot()
     planet = (
         skyhook.planet_name if skyhook else (slot.planet_name if slot else "J-ABCD IV")
     )
@@ -372,19 +375,27 @@ def _den_siphon():
     corporation = (
         skyhook.owner.corporation.corporation_name if skyhook else "Example Corporation"
     )
+    whose = slot.holder_label if slot else "unknown"
     return _embed(
         title=f"Den siphoning workforce: {planet}",
         description=(
             f"**{planet}** is producing **{now_value:,}** workforce against a "
             f"base of **{base:,}** -- a mercenary den is taking "
             f"**{percent:.0f}%**, {base - now_value:,} a cycle. "
-            "No den of ours is anchored here."
+            # An alert that fired at all is proof a den is there. The only
+            # open question is whose, so the sentence never says "none".
+            + (
+                f"Run by {whose}."
+                if whose != "unknown"
+                else "A den is here -- this alert is proof of it -- "
+                "but nobody has recorded whose."
+            )
         ),
         color=COLOR_WARNING,
         fields=[
             Field(name="System", value=system, inline=True),
             Field(name="Corporation", value=corporation, inline=True),
-            Field(name="Den slot", value="Free", inline=True),
+            Field(name="Den slot", value=whose, inline=True),
         ],
         system_name=system,
         footer_note=TEST_FOOTER,

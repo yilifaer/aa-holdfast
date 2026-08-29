@@ -366,7 +366,8 @@ def check_siphoned_skyhooks() -> int:
                     + (
                         f"Run by {whose}."
                         if whose != "unknown"
-                        else "Nobody is on record as running a den here."
+                        else "A den is here -- this alert is proof of it -- "
+                        "but nobody has recorded whose."
                     )
                 ),
                 color=COLOR_WARNING,
