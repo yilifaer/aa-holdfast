@@ -1,6 +1,6 @@
 """Sovereignty, Skyhook and Mercenary Den monitoring for Alliance Auth."""
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 __title__ = "Holdfast"
 
 # ESI compatibility date. The Equinox sovereignty/skyhook routes only exist from

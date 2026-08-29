@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses
 [semantic versioning](https://semver.org/).
 
+## [0.1.3] - 2026-08-30
+
+Documentation only. No behaviour changes; upgrading is optional.
+
+### Changed
+
+- Corrected which apps share the ESI rate-limit bucket. CCP keys it on
+  application and character together, and the application is the EVE SSO
+  client id -- of which an Alliance Auth install has exactly one, shared by
+  every module on it. So the bucket is shared with `aa-structures` and
+  `corptools` on your own site, and **not** with somebody else's Auth or a
+  third-party tool the same character has authorised.
+
+  The old wording said "any other app using the same character", which made a
+  rate limit sound like weather. It is not: the cause is on your own server and
+  you can turn it down.
+
 ## [0.1.2] - 2026-08-30
 
 ### Fixed
