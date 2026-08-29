@@ -23,6 +23,15 @@ def main(argv):
         }
     )
     django.setup()
+
+    # Auth's base template asks django-sri for an integrity hash of each static
+    # file, and django-sri hashes the collected copy. Without this, every test
+    # that renders a page fails on a missing STATIC_ROOT rather than on
+    # anything to do with this app.
+    from django.core.management import call_command
+
+    call_command("collectstatic", interactive=False, verbosity=0)
+
     runner = get_runner(settings)(verbosity=2, interactive=False)
     labels = argv[1:] or ["holdfast"]
     sys.exit(bool(runner.run_tests(labels)))

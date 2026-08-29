@@ -130,7 +130,32 @@ CELERYBEAT_SCHEDULE["holdfast_track_workforce"] = {
     "task": "holdfast.tasks.track_workforce",
     "schedule": crontab(minute="12,27,42,57"),
 }
+# Skyhook listings return a planet id and nothing else. Naming them costs one
+# universe call each, so it runs on its own rather than turning a two-call
+# listing sync into a several-minute crawl.
+CELERYBEAT_SCHEDULE["holdfast_resolve_planets"] = {
+    "task": "holdfast.tasks.resolve_planets",
+    "schedule": crontab(minute="9,24,39,54"),
+}
+# Public route, one call per region, cached an hour their side.
+CELERYBEAT_SCHEDULE["holdfast_update_system_costs"] = {
+    "task": "holdfast.tasks.update_system_costs",
+    "schedule": crontab(minute=35),
+}
+# Entosis campaigns: public, cached five seconds. This is the only public
+# evidence that a sovereignty hub has been reinforced -- the hub detail route
+# has no state field -- so without it the timer board never turns red.
+CELERYBEAT_SCHEDULE["holdfast_update_campaigns"] = {
+    "task": "holdfast.tasks.update_campaigns",
+    "schedule": crontab(minute="*/5"),
+}
 ```
+
+All eleven belong in `local.py`; `crontab` comes from `celery.schedules`, which
+an Alliance Auth `local.py` already imports. Leaving one out does not break the
+app, it quietly removes a feature: without `resolve_planets` every list shows
+bare planet ids, without `update_system_costs` the cost page stays empty, and
+without `update_campaigns` the timer board never shows a reinforced hub.
 
 ## Rate limiting
 

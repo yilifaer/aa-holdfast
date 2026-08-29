@@ -11,6 +11,9 @@ a template that breaks under Auth's own base layout -- but it makes the logic
 tests runnable anywhere in seconds.
 """
 
+import pathlib
+import tempfile
+
 SECRET_KEY = "only-for-tests-never-deployed"
 DEBUG = False
 USE_TZ = True
@@ -33,15 +36,28 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "django.contrib.humanize",
     "django_celery_beat",
+    "solo",
+    "django_bootstrap5",
+    "sortedm2m",
     "esi",
     "eveuniverse",
+    # Auth's own apps. The list is longer than this app's models need because
+    # rendering any page means rendering Auth's base template, which pulls in
+    # the menu, the theme, the notification bell and the custom-css bundle.
+    # Getting a page to render at all is the point: it is what catches a
+    # template that breaks on an install with no data in it.
     "allianceauth",
+    "allianceauth.framework",
     "allianceauth.authentication",
     "allianceauth.eveonline",
-    "allianceauth.framework",
-    "allianceauth.menu",
-    "allianceauth.notifications",
     "allianceauth.groupmanagement",
+    "allianceauth.notifications",
+    "allianceauth.menu",
+    "allianceauth.thirdparty.navhelper",
+    "allianceauth.theme",
+    "allianceauth.theme.flatly",
+    "allianceauth.custom_css",
+    "sri",
     "holdfast",
 ]
 
@@ -67,6 +83,10 @@ TEMPLATES = [
 ]
 
 STATIC_URL = "/static/"
+# django-sri hashes the *collected* file, so rendering any page that extends
+# Auth's base needs a STATIC_ROOT with collectstatic already run into it.
+# runtests.py does that once into a temporary directory.
+STATIC_ROOT = str(pathlib.Path(tempfile.gettempdir()) / "holdfast-test-static")
 DEFAULT_AUTO_FIELD = "django.db.models.AutoField"
 
 # django-esi refuses to build a client without these, and the tests never
@@ -95,6 +115,11 @@ CACHES = {
 # until these are set. They describe how a real install should be configured;
 # for a test run any valid value will do, but leaving them unset stops the
 # suite before it begins.
+# Auth's base template asks the theme app which stylesheet to serve, and the
+# theme app reads this. Rendering any page without it raises before the view is
+# even reached.
+DEFAULT_THEME = "allianceauth.theme.flatly.auth_hooks.FlatlyThemeHook"
+
 SITE_URL = "https://example.invalid"
 CSRF_TRUSTED_ORIGINS = [SITE_URL]
 LOGIN_TOKEN_SCOPES = ["publicData"]
