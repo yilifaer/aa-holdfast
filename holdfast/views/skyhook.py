@@ -4,7 +4,6 @@ from datetime import timedelta
 
 from django.contrib import messages
 from django.shortcuts import redirect, render
-from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 from eveuniverse.models import EvePlanet, EveSolarSystem
@@ -15,7 +14,6 @@ from .common import (
     require_any,
     routes_for_section,
     save_routes,
-    save_webhook,
     skyhook_can_manage,
     skyhook_can_view_all,
     stealable_skyhooks,
@@ -252,7 +250,6 @@ def settings_view(request):
             request,
             thresholds=ReagentThreshold.objects.select_related("eve_type"),
             routes=routes_for_section("skyhook"),
-            holdfast_save_url=reverse("holdfast:skyhook_settings_save"),
             webhooks=Webhook.objects.all(),
         ),
     )
@@ -261,11 +258,6 @@ def settings_view(request):
 @require_any(*SKYHOOK_ADMIN)
 @require_POST
 def settings_save(request):
-    # A channel action posts to the same URL and is self-contained;
-    # nothing else on the form was submitted with it.
-    if save_webhook(request):
-        return redirect("holdfast:skyhook_settings")
-
     config = HoldfastConfig.get_solo()
     errors = []
 

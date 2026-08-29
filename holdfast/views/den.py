@@ -13,7 +13,6 @@ from allianceauth.eveonline.models import EveCharacter
 from django.contrib import messages
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
-from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 from esi.decorators import token_required
@@ -43,7 +42,6 @@ from .common import (
     require_any,
     routes_for_section,
     save_routes,
-    save_webhook,
     visible_slots,
 )
 
@@ -713,7 +711,6 @@ def settings_view(request):
         _context(
             request,
             routes=routes_for_section("den"),
-            holdfast_save_url=reverse("holdfast:den_settings_save"),
             webhooks=Webhook.objects.all(),
         ),
     )
@@ -722,11 +719,6 @@ def settings_view(request):
 @require_any(*DEN_ADMIN)
 @require_POST
 def settings_save(request):
-    # A channel action posts to the same URL and is self-contained;
-    # nothing else on the form was submitted with it.
-    if save_webhook(request):
-        return redirect("holdfast:den_settings")
-
     config = HoldfastConfig.get_solo()
     errors = []
 
