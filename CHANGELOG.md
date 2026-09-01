@@ -4,6 +4,25 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses
 [semantic versioning](https://semver.org/).
 
+## [0.1.6] - 2026-08-31
+
+### Fixed
+
+- **The install command was wrong.** The README opened with
+  `pip install -e /path/to/aa-holdfast`, which is how the author installs it
+  from a working copy and is useless to everybody else. It is
+  `pip install aa-holdfast`. Nobody caught it here because nobody here has ever
+  run it -- this machine deploys over SSH from a script.
+- The install is one block you can copy, rather than four separated by prose.
+
+### Changed
+
+- The README is two thirds shorter: 3,759 words down to 1,295. A maintainer
+  reviewing it for the app directory called it "a whole wall of mostly useless
+  text ... stating wrong/uninteresting or obvious things", which was fair. What
+  survived is what you need to install it, configure it, and understand the two
+  or three things about these ESI routes that will otherwise surprise you.
+
 ## [0.1.5] - 2026-08-30
 
 Documentation only. No behaviour changes; upgrading is optional.
