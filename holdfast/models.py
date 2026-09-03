@@ -5,6 +5,7 @@ from datetime import timedelta
 from allianceauth.authentication.models import CharacterOwnership
 from allianceauth.eveonline.models import EveCharacter, EveCorporationInfo
 from django.conf import settings
+from django.contrib.auth.models import Group
 from django.db import models
 from django.utils import timezone
 from django.utils import timezone as timezone_module
@@ -607,6 +608,16 @@ class Webhook(models.Model):
     is_enabled = models.BooleanField(default=True)
     ping_type = models.CharField(
         max_length=2, choices=PingType.choices, default=PingType.NONE
+    )
+    ping_groups = models.ManyToManyField(
+        Group,
+        blank=True,
+        related_name="+",
+        help_text=(
+            "Auth groups to mention on every post to this webhook. Each needs a "
+            "Discord role of the same name -- Auth's Discord service creates "
+            "those -- so the skyhook team can be pinged without @here."
+        ),
     )
     notes = models.TextField(blank=True)
 

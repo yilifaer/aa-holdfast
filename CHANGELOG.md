@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses
 [semantic versioning](https://semver.org/).
 
+## [0.1.8] - 2026-09-04
+
+### Added
+
+- **A webhook can mention Auth groups.** Pick them on the webhook in Django
+  admin (*Holdfast → Webhooks*); every post then carries `<@&role>` for each
+  group that has a Discord role of the same name, which is what Auth's Discord
+  service creates. A group without a role is logged and skipped, and the alert
+  still goes out. Until now the only pings were @here and @everyone, and on an
+  alliance Discord both reach far more people than care -- as the first
+  outside install put it, "our skyhook team is the only one which needs a
+  ping in the proper channel."
+
 ## [0.1.7] - 2026-09-04
 
 ### Fixed

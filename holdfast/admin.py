@@ -79,7 +79,12 @@ class SovSystemAdmin(admin.ModelAdmin):
 
 @admin.register(Webhook)
 class WebhookAdmin(admin.ModelAdmin):
-    list_display = ("name", "is_enabled", "ping_type")
+    list_display = ("name", "is_enabled", "ping_type", "pings")
+    filter_horizontal = ("ping_groups",)
+
+    @admin.display(description="Pings groups")
+    def pings(self, hook):
+        return ", ".join(hook.ping_groups.values_list("name", flat=True)) or "-"
 
 
 @admin.register(AlertLog)

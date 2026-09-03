@@ -157,7 +157,9 @@ everyone.
 
 Per-category routing, so fuel warnings and "something is being shot" can go to
 different channels. Thresholds and switches live on each section's settings
-page, not in `local.py`.
+page, not in `local.py`. A webhook can mention Auth groups instead of @here —
+pick them on the webhook in Django admin; each needs a Discord role of the same
+name, which Auth's Discord service creates.
 
 ```bash
 python manage.py holdfast_test_alerts             # one sample of every alert

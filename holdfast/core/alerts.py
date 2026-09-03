@@ -18,6 +18,7 @@ from datetime import timedelta
 
 from dhooks_lite import Embed, Field, Footer
 from dhooks_lite import Webhook as DiscordWebhook
+from django.apps import apps
 from django.utils import timezone
 
 from ..app_settings import (
@@ -102,6 +103,66 @@ def _webhooks_for(category):
     return list(Webhook.objects.filter(is_enabled=True))
 
 
+def _discord_service_installed() -> bool:
+    return apps.is_installed("allianceauth.services.modules.discord")
+
+
+def _lookup_role_id(group):
+    """The Discord role id for an Auth group, or None when the server has no
+    role of that name. Auth's client keeps the guild's role list cached, so
+    this is one request per process rather than one per group per alert."""
+    from allianceauth.services.modules.discord.models import DiscordUser
+
+    role = DiscordUser.objects.group_to_role(group)
+    return role.get("id") if role else None
+
+
+def _role_mentions(hook) -> list:
+    """Role mentions for the groups on a webhook.
+
+    A group whose role cannot be found is logged and skipped rather than
+    failing the post: a fuel warning with one missing ping is still a fuel
+    warning.
+    """
+    groups = list(hook.ping_groups.all())
+    if not groups:
+        return []
+    if not _discord_service_installed():
+        logger.warning(
+            "Webhook %s pings groups, but Auth's Discord service is not installed",
+            hook.name,
+        )
+        return []
+    mentions = []
+    for group in groups:
+        try:
+            role_id = _lookup_role_id(group)
+        except Exception:  # noqa: BLE001 - one bad lookup must not drop the alert
+            logger.warning(
+                "Webhook %s: could not resolve a Discord role for group %r",
+                hook.name,
+                group.name,
+                exc_info=True,
+            )
+            continue
+        if role_id is None:
+            logger.warning("Webhook %s: no Discord role named %r", hook.name, group.name)
+            continue
+        mentions.append(f"<@&{role_id}>")
+    return mentions
+
+
+def _content(hook):
+    """The text in front of the embed: pings, or nothing."""
+    parts = []
+    if hook.ping_type == Webhook.PingType.HERE:
+        parts.append("@here")
+    elif hook.ping_type == Webhook.PingType.EVERYONE:
+        parts.append("@everyone")
+    parts.extend(_role_mentions(hook))
+    return " ".join(parts) or None
+
+
 def _send(embed: Embed, category=None) -> bool:
     """Post to the channels configured for this category.
 
@@ -119,14 +180,9 @@ def _send(embed: Embed, category=None) -> bool:
         return False
     delivered = False
     for hook in hooks:
-        content = None
-        if hook.ping_type == Webhook.PingType.HERE:
-            content = "@here"
-        elif hook.ping_type == Webhook.PingType.EVERYONE:
-            content = "@everyone"
         try:
             DiscordWebhook(hook.url).execute(
-                content=content, embeds=[embed], username="SOV Monitor"
+                content=_content(hook), embeds=[embed], username="SOV Monitor"
             )
             delivered = True
         except Exception:  # noqa: BLE001 - one broken hook must not stop the rest
