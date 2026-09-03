@@ -8,7 +8,7 @@
         <div class="holdfast-empty">
             {% translate "No sovereignty hubs yet." %}
             {% if perms.holdfast.manage_owners %}
-                {% translate "Register a corporation on the Owners page to start pulling data." %}
+                <a href="{% url 'holdfast:owners' %}">{% translate "Register a corporation" %}</a> {% translate "to start pulling data." %}
             {% endif %}
         </div>
     {% else %}

@@ -18,6 +18,9 @@
 {% endblock %}
 
 {% block header_nav_collapse_right %}
+    {% if perms.holdfast.manage_owners %}
+        <li class="nav-item"><a class="nav-link {% navactive request 'holdfast:owners' %}" href="{% url 'holdfast:owners' %}"><i class="fas fa-key"></i> {% translate "Tokens" %}</a></li>
+    {% endif %}
     {% if can_manage %}
         <li class="nav-item"><a class="nav-link {% navactive request 'holdfast:skyhook_settings' %}" href="{% url 'holdfast:skyhook_settings' %}"><i class="fas fa-sliders-h"></i> {% translate "Settings" %}</a></li>
     {% endif %}

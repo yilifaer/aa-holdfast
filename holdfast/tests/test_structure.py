@@ -215,3 +215,38 @@ class PermissionTests(SimpleTestCase):
 
         unused = [name for name in declared if f'"{name}"' not in enforced]
         self.assertEqual(unused, [], "permissions declared and never checked")
+
+
+class ReachabilityTests(SimpleTestCase):
+    """Every page a permission unlocks must be linked from somewhere.
+
+    The owners page went out with no link to it at all. Nobody here noticed:
+    the URL was in muscle memory from the first day, and the README said
+    "Owners page" as if that named a place you could click. The first outside
+    install spent an evening with full admin access, unable to find it.
+    """
+
+    def _template_source(self):
+        return "".join(
+            path.read_text(encoding="utf-8")
+            for path in sorted((ROOT / "templates").rglob("*.html"))
+        )
+
+    def test_every_named_page_is_linked_from_a_template(self):
+        urls = _read("urls.py")
+        names = re.findall(r'name="([a-z_]+)"', urls)
+        templates = self._template_source()
+
+        # Form targets and SSO callbacks are reached by submitting, not
+        # clicking; a page you land on after one is not what this guards.
+        skip = re.compile(r"_(save|test|add|claim|decide|record|revoke|dismiss|withdraw)$|^add_")
+        pages = [n for n in names if not skip.search(n)]
+
+        unreachable = [n for n in pages if f"holdfast:{n}'" not in templates and f'holdfast:{n}"' not in templates]
+        self.assertEqual(unreachable, [], "pages with a URL and nothing that links to them")
+
+    def test_the_owners_page_is_linked_from_every_section(self):
+        """Token registration belongs to no section, so each one must offer it."""
+        for section in SECTIONS:
+            nav = _read("templates", "holdfast", section, "base.html")
+            self.assertIn("holdfast:owners", nav, f"{section} nav does not offer the owners page")

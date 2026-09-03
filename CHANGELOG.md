@@ -4,6 +4,26 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses
 [semantic versioning](https://semver.org/).
 
+## [0.1.7] - 2026-09-04
+
+### Fixed
+
+- **The token registration page had no link to it.** It existed at
+  `/holdfast/owners/` and nowhere else; the README called it "the Owners page"
+  as if that were somewhere you could click. Nobody here noticed because the
+  URL was in muscle memory from day one. The first install outside this
+  alliance, with full admin access, could not find it. It is now a **Tokens**
+  tab beside Settings in every section, shown to anyone holding
+  `manage_owners`, and the empty Hub Fuel page links to it.
+- A structural test now fails for any URL that no template links to, so a page
+  cannot ship unreachable again.
+
+### Changed
+
+- The README says why an aa-structures token cannot register a corporation:
+  `esi-corporations.read_structures.v1` and `esi-structures.read_corporation.v1`
+  are different scopes.
+
 ## [0.1.6] - 2026-08-31
 
 ### Fixed

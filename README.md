@@ -57,10 +57,17 @@ django-eveuniverse, dhooks-lite, PyYAML.
 
 ## Setup
 
-**1. Register a corporation.** Owners page → add. These are *corporation*
-endpoints: the character needs the in-game **Station Manager** role, and an
-executor's token does not reach member corps. Every corp holding hubs or
-skyhooks registers its own.
+**1. Register a corporation.** Grant yourself `manage_owners`; a **Tokens**
+tab then appears beside Settings in every section, and **Add corporation**
+there takes you through EVE SSO. These are *corporation* endpoints: the
+character needs the in-game **Station Manager** role, and an executor's token
+does not reach member corps. Every corp holding hubs or skyhooks registers its
+own.
+
+> **An aa-structures token will not do.** That app holds
+> `esi-corporations.read_structures.v1`; these routes need
+> `esi-structures.read_corporation.v1`. Similar names, different scopes — the
+> Add button mints the right one.
 
 **2. Add a Discord webhook** in Django admin (*Holdfast → Webhooks*), then pick
 which alerts go where on each section's settings page.
