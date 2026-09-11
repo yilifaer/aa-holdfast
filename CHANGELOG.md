@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses
 [semantic versioning](https://semver.org/).
 
-## [0.1.8] - 2026-09-04
+## [0.1.8] - 2026-09-12
 
 ### Added
 
@@ -27,6 +27,9 @@ All notable changes to this project are documented here. The format follows
   removed. The labels now name their rung -- member, user, officer, manager --
   and say what each adds to the one below.
 - Permissions have their own README section, so `#permissions` links to it.
+- The app calls itself **Holdfast** in Django admin and the permission picker.
+  It was still *SOV Monitor* there -- its name from before the skyhook and den
+  sections existed -- which is why den permissions were filed under it.
 
 ### Fixed
 

@@ -737,7 +737,7 @@ class HoldfastConfig(models.Model):
         verbose_name_plural = "configuration"
 
     def __str__(self) -> str:
-        return "SOV Monitor configuration"
+        return "Holdfast configuration"
 
     def save(self, *args, **kwargs):
         self.pk = 1  # singleton
