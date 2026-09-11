@@ -65,6 +65,12 @@ def den_can_see_list(user) -> bool:
     return _any_perm(user, "den_member", "den_officer", "den_manage")
 
 
+def den_can_claim(user) -> bool:
+    """Applying for a slot is part of the user rung, not a permission of its
+    own: whoever can see the den list, where the button is, may use it."""
+    return den_can_see_list(user)
+
+
 def den_can_enter(user) -> bool:
     return _any_perm(user, "den_basic", "den_member", "den_officer", "den_manage")
 

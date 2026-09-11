@@ -75,7 +75,7 @@ def add_owner(request, token):
     return redirect("holdfast:owners")
 
 
-@require_any("den_claim", "den_basic", "den_member", "den_officer", "den_manage")
+@require_any("den_basic", "den_member", "den_officer", "den_manage")
 @token_required(scopes=HOLDFAST_DEN_ESI_SCOPES)
 def add_den_character(request, token):
     """Register a character's own dens without going through a slot claim."""

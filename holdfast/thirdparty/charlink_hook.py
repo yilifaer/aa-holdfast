@@ -17,19 +17,13 @@ from allianceauth.authentication.models import CharacterOwnership
 from allianceauth.eveonline.models import EveCharacter, EveCorporationInfo
 from charlink.app_imports.utils import AppImport, LoginImport
 from charlink.utils import users_with_permissions
-from django.contrib.auth.models import Permission
 from django.db.models import Exists, OuterRef
 
 from ..app_settings import HOLDFAST_DEN_ESI_SCOPES, HOLDFAST_ESI_SCOPES
 from ..models import DenCharacter, Owner
 from ..tasks import update_den_character as update_den_character_task
 from ..tasks import update_owner as update_owner_task
-
-
-def _permission(codename):
-    return Permission.objects.get(
-        content_type__app_label="holdfast", codename=codename
-    )
+from ..views.common import den_can_enter
 
 
 def _ownership(token):
@@ -124,9 +118,7 @@ app_import = AppImport(
             # everyone re-authorising anyway.
             scopes=HOLDFAST_ESI_SCOPES + HOLDFAST_DEN_ESI_SCOPES,
             check_permissions=lambda user: (
-                user.has_perm("holdfast.den_claim")
-                or user.has_perm("holdfast.den_basic")
-                or user.has_perm("holdfast.manage_owners")
+                den_can_enter(user) or user.has_perm("holdfast.manage_owners")
             ),
             is_character_added=_den_added,
             is_character_added_annotation=Exists(
@@ -135,7 +127,14 @@ app_import = AppImport(
                 )
             ),
             get_users_with_perms=lambda: users_with_permissions(
-                _permission("den_claim")
+                [
+                    "holdfast.den_basic",
+                    "holdfast.den_member",
+                    "holdfast.den_officer",
+                    "holdfast.den_manage",
+                    "holdfast.manage_owners",
+                ],
+                require_all=False,
             ),
             # Off by default: this is not a scope every alt needs, and ticking
             # it for everyone would burn ESI calls on characters that will

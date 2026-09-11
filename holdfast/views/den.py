@@ -34,6 +34,7 @@ from ..models import (
 )
 from ..tasks import update_den_character as update_den_character_task
 from .common import (
+    den_can_claim,
     den_can_manage,
     den_can_see_list,
     den_can_view_all,
@@ -57,7 +58,7 @@ def _context(request, **extra):
         "can_manage": den_can_manage(request.user),
         "can_view_all": den_can_view_all(request.user),
         "can_see_list": den_can_see_list(request.user),
-        "can_claim": request.user.has_perm("holdfast.den_claim"),
+        "can_claim": den_can_claim(request.user),
     }
     base.update(extra)
     return base
@@ -462,7 +463,7 @@ def admin_page(request):
 
 # Order matters: the permission check has to sit outside the token flow, or an
 # unauthorised user gets bounced through EVE SSO before being turned away.
-@require_any("den_claim")
+@require_any(*DEN_LIST)
 @token_required(scopes=HOLDFAST_DEN_ESI_SCOPES)
 def claim_slot(request, token, slot_pk):
     """Apply for a slot. Authorisation is collected up front.
@@ -538,7 +539,7 @@ def save_contact(request):
     return redirect("holdfast:den_information")
 
 
-@require_any("den_claim")
+@require_any(*DEN_LIST)
 @require_POST
 def withdraw_claim(request, claim_pk):
     claim = get_object_or_404(DenClaim, pk=claim_pk, user=request.user)

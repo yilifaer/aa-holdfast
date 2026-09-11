@@ -18,6 +18,24 @@ from .core import attention
 from .views.common import den_can_enter, skyhook_can_enter, sov_can_enter
 
 
+def _section_pages(prefix, *extra):
+    """Every page in one section, for highlighting its sidebar entry.
+
+    Auth matches ``navactive`` against exact URL names, or a whole namespace --
+    never a prefix, which silently matches nothing. The namespace form is out
+    too: all three entries share this app's, so it would light them together.
+    With nothing lit, Auth also collapses whatever sidebar folder an admin
+    filed these entries under, and every section's home redirects elsewhere,
+    so that happened on every page.
+    """
+    names = [p.name for p in urls.urlpatterns if getattr(p, "name", None)]
+    return [
+        f"holdfast:{name}"
+        for name in names + list(extra)
+        if name.startswith(prefix) or name in extra
+    ]
+
+
 class _HoldfastMenu(MenuItemHook):
     """Shared plumbing: hide the entry from anyone who may not open it, and
     carry a badge showing how many things in that section want attention.
@@ -48,7 +66,9 @@ class SovMenu(_HoldfastMenu):
             _("SOV Monitor"),
             "fas fa-flag fa-fw",
             "holdfast:sov_home",
-            navactive=["holdfast:sov_"],
+            # The Tokens page belongs to no section, and its title already
+            # says SOV Monitor -- so that is the entry it keeps lit.
+            navactive=_section_pages("sov_", "owners"),
         )
 
 
@@ -62,7 +82,7 @@ class SkyhookMenu(_HoldfastMenu):
             _("Skyhook Monitor"),
             "fas fa-satellite-dish fa-fw",
             "holdfast:skyhook_home",
-            navactive=["holdfast:skyhook_"],
+            navactive=_section_pages("skyhook_"),
         )
 
 
@@ -76,7 +96,7 @@ class DenMenu(_HoldfastMenu):
             _("Den Monitor"),
             "fas fa-house-flag fa-fw",
             "holdfast:den_home",
-            navactive=["holdfast:den_"],
+            navactive=_section_pages("den_"),
         )
 
 

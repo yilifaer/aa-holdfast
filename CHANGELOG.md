@@ -17,6 +17,27 @@ All notable changes to this project are documented here. The format follows
   outside install put it, "our skyhook team is the only one which needs a
   ping in the proper channel."
 
+### Changed
+
+- **Den permissions are one ladder, and `den_claim` is gone.** Applying for a
+  den slot is part of `den_member` now, and every rung includes the ones below
+  it, so a group needs one den permission rather than up to three. Upgrading
+  keeps everyone's access: whoever held `den_claim` without `den_member`,
+  `den_officer` or `den_manage` is given `den_member`, and then `den_claim` is
+  removed. The labels now name their rung -- member, user, officer, manager --
+  and say what each adds to the one below.
+- Permissions have their own README section, so `#permissions` links to it.
+
+### Fixed
+
+- **The sidebar folder closed on every Holdfast page.** Auth highlights a menu
+  entry by exact URL name or whole namespace, never by prefix, and a prefix is
+  what these entries gave it -- so none was ever lit, and an admin who filed
+  them under a sidebar folder watched it snap shut on every click. Each entry
+  now lists its section's pages; the Tokens page keeps SOV Monitor lit.
+- The charlink entry raised `TypeError` whenever charlink asked which users may
+  use it: it was handed a permission object where charlink expects names.
+
 ## [0.1.7] - 2026-09-04
 
 ### Fixed

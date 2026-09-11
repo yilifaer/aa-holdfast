@@ -72,26 +72,38 @@ own.
 **2. Add a Discord webhook** in Django admin (*Holdfast → Webhooks*), then pick
 which alerts go where on each section's settings page.
 
-**3. Grant permissions.** Three ladders; a higher rung implies the lower ones.
-
-| Section | Member | Officer | Manager |
-|---|---|---|---|
-| Sovereignty | `sov_basic` | `sov_officer` | `sov_manage` |
-| Skyhooks | `skyhook_basic` | `skyhook_officer` | `skyhook_manage` |
-| Dens | `den_basic`, then `den_member` | `den_officer` | `den_manage` |
-
-Plus `den_claim` to apply for a den site and `manage_owners` to register tokens.
-
-Attach the three `*_basic` permissions to your **Member state** rather than a
-group — they cover only the pages any member should have, and a state follows
-membership so nobody has to be pruned later.
-
-> **`den_claim` needs `den_member` beside it.** `den_claim` permits the action;
-> the Den List page where the button lives is gated by `den_member`.
+**3. Grant permissions** — see [Permissions](#permissions).
 
 **Single alliance only.** Pages filter by alliance, but settings, thresholds and
 Discord channels are one set per install and the alert checks sweep every owner.
 Two alliances sharing an Auth would get each other's warnings. Run a second Auth.
+
+## Permissions
+
+Each section is a ladder, and every rung includes the ones below it — grant one
+per section, never two.
+
+| Section | Member | User | Officer | Manager |
+|---|---|---|---|---|
+| Sovereignty | `sov_basic` | — | `sov_officer` | `sov_manage` |
+| Skyhooks | `skyhook_basic` | — | `skyhook_officer` | `skyhook_manage` |
+| Dens | `den_basic` | `den_member` | `den_officer` | `den_manage` |
+
+A den **user** may apply for a den slot — permission to anchor in your space.
+`manage_owners` registers corporation tokens and sits outside the ladders.
+
+Put the `*_basic` permissions on your **Member state** rather than a group: they
+cover only what any member should see, and a state follows membership, so
+nobody has to be pruned later. A typical split:
+
+| Who | Grant |
+|---|---|
+| Member state | `sov_basic`, `skyhook_basic`, `den_basic` |
+| Den operators | `den_member` |
+| Den officers | `den_officer` |
+| Sov fuel team | `sov_officer` |
+| Skyhook team | `skyhook_officer` |
+| Leadership | `sov_manage`, `skyhook_manage`, `den_manage`, `manage_owners` |
 
 ## What it does
 

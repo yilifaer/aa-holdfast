@@ -79,11 +79,14 @@ class General(models.Model):  # noqa: DJ008 -- never instantiated, see below
             ("skyhook_officer", "Skyhook: can see every skyhook page"),
             ("skyhook_manage", "Skyhook: can change skyhook settings"),
             # --- Mercenary dens ---
-            ("den_basic", "Den: can see their own dens and timers"),
-            ("den_member", "Den: can also see the den list and their dashboard"),
-            ("den_officer", "Den: can see every den page"),
-            ("den_manage", "Den: can approve claims and change den settings"),
-            ("den_claim", "Den: can apply for a den slot"),
+            # One ladder, and every rung includes the ones below it, so a
+            # group needs exactly one of these. Applying for a slot belongs to
+            # the user rung: as a permission of its own, every group that could
+            # reach the claim button had to be handed it separately.
+            ("den_basic", "Den member: can see their own dens and timers"),
+            ("den_member", "Den user: member, plus the den list and applying for a den slot"),
+            ("den_officer", "Den officer: user, plus every den page"),
+            ("den_manage", "Den manager: officer, plus approving claims and den settings"),
             # --- Cross-cutting ---
             ("manage_owners", "Can register corporation and character tokens"),
         )
