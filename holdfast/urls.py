@@ -47,5 +47,6 @@ urlpatterns = [
     # --- Token registration, shared ---
     path("owners/", owners.index, name="owners"),
     path("owners/add/", owners.add_owner, name="add_owner"),
+    path("owners/<int:pk>/toggle/", owners.toggle_owner, name="owner_toggle"),
     path("owners/add-den-character/", owners.add_den_character, name="add_den_character"),
 ]

@@ -217,6 +217,130 @@ class PermissionTests(SimpleTestCase):
         self.assertEqual(unused, [], "permissions declared and never checked")
 
 
+class RegistrationGuardTests(SimpleTestCase):
+    """Both ways of registering a corporation must ask the same question.
+
+    The first version of this guard would have gone on a charlink function
+    nothing called: the hook registers ``_add_all``, and the two helpers
+    beside it had no caller. A guard there guards nothing, so the check is on
+    the functions that are actually wired up, by name.
+    """
+
+    GUARDED = {
+        ("views", "owners.py"): "add_owner",
+        ("thirdparty", "charlink_hook.py"): "_add_all",
+    }
+
+    def _calls_in(self, path, function_name):
+        tree = ast.parse(_read(*path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == function_name:
+                return {
+                    ast.unparse(call.func)
+                    for call in ast.walk(node)
+                    if isinstance(call, ast.Call)
+                }
+        self.fail(f"{'/'.join(path)} has no function {function_name}")
+
+    def test_every_registration_path_calls_the_guard(self):
+        for path, function_name in self.GUARDED.items():
+            with self.subTest(function=function_name):
+                self.assertIn("registration_refusal", self._calls_in(path, function_name))
+
+    def test_no_registration_path_re_enables_an_owner(self):
+        """``is_enabled`` in the update_or_create defaults is how re-adding an
+        expired token silently switched a deliberately disabled owner back on."""
+        for path, function_name in self.GUARDED.items():
+            tree = ast.parse(_read(*path))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.FunctionDef) and node.name == function_name:
+                    self.assertNotIn('"is_enabled"', ast.unparse(node), function_name)
+
+    def test_the_charlink_hook_has_no_unwired_entry_points(self):
+        tree = ast.parse(_read("thirdparty", "charlink_hook.py"))
+        defined = {n.name for n in tree.body if isinstance(n, ast.FunctionDef)}
+        self.assertNotIn("_add_corporation", defined)
+        self.assertNotIn("_add_den_character", defined)
+
+
+class OwnerScopeTests(SimpleTestCase):
+    """Every alert that walks owner rows must decide by the active set.
+
+    These loops are what kept posting for a disabled owner's frozen hubs and
+    for a foreign alliance's skyhooks. A new check that forgets is the same
+    bug again, so each one has to reference the active-owner helper.
+    """
+
+    OWNER_ROW_CHECKS = {
+        "alerts.py": (
+            "check_hub_fuel",
+            "check_hub_upgrades",
+            "check_skyhook_theft",
+            "check_skyhook_attacks",
+            "check_hub_reinforced",
+        ),
+        "den_alerts.py": ("check_workforce_siphon", "check_siphoned_skyhooks"),
+    }
+
+    def test_every_owner_row_alert_is_scoped_to_active_owners(self):
+        for filename, names in self.OWNER_ROW_CHECKS.items():
+            tree = ast.parse(_read("core", filename))
+            found = {
+                node.name: ast.unparse(node)
+                for node in tree.body
+                if isinstance(node, ast.FunctionDef) and node.name in names
+            }
+            for name in names:
+                with self.subTest(check=name):
+                    self.assertIn(name, found, f"{filename} has no {name}")
+                    self.assertIn("_active_owner_ids()", found[name])
+
+    def test_the_adm_check_reads_the_tracked_set_not_the_table(self):
+        source = _read("core", "alerts.py")
+        block = source[source.index("def check_adm") :]
+        block = block[: block.index("\ndef ")]
+        self.assertIn("tracked_alliance_ids()", block)
+
+    def test_the_tracked_set_lives_in_core_scope_only(self):
+        """One definition. esi_sync used to have its own, derived from the
+        owners -- which is the derivation that made a foreign alliance
+        tracked in the first place."""
+        for path in sorted(ROOT.rglob("*.py")):
+            if path.name in ("scope.py",) or "tests" in path.parts:
+                continue
+            self.assertNotIn(
+                "def tracked_alliance_ids", path.read_text(encoding="utf-8"), str(path)
+            )
+
+
+class MigrationTests(SimpleTestCase):
+    """A migration is frozen; the code it would import is not.
+
+    The tracked-alliance bootstrap (0009, once part of 0008) first shipped
+    calling ``holdfast.core.scope`` for its data step. That
+    works until the helper is renamed or its signature changes, at which point
+    every fresh install fails inside ``migrate`` in a file nobody edits any
+    more. A data migration carries its own loop over the historical models
+    it is handed, and reads settings through ``django.conf.settings``.
+    """
+
+    def test_no_migration_imports_the_live_app(self):
+        for path in sorted((ROOT / "migrations").glob("0*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom):
+                    self.assertFalse(
+                        (node.module or "").startswith("holdfast"),
+                        f"{path.name} imports {node.module}",
+                    )
+                elif isinstance(node, ast.Import):
+                    for alias in node.names:
+                        self.assertFalse(
+                            alias.name.startswith("holdfast"),
+                            f"{path.name} imports {alias.name}",
+                        )
+
+
 class ReachabilityTests(SimpleTestCase):
     """Every page a permission unlocks must be linked from somewhere.
 

@@ -68,7 +68,7 @@ class SovMenu(_HoldfastMenu):
             "holdfast:sov_home",
             # The Tokens page belongs to no section, and its title already
             # says SOV Monitor -- so that is the entry it keeps lit.
-            navactive=_section_pages("sov_", "owners"),
+            navactive=_section_pages("sov_", "owners", "owner_toggle"),
         )
 
 

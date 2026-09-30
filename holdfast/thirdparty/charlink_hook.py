@@ -17,9 +17,11 @@ from allianceauth.authentication.models import CharacterOwnership
 from allianceauth.eveonline.models import EveCharacter, EveCorporationInfo
 from charlink.app_imports.utils import AppImport, LoginImport
 from charlink.utils import users_with_permissions
+from django.contrib import messages
 from django.db.models import Exists, OuterRef
 
 from ..app_settings import HOLDFAST_DEN_ESI_SCOPES, HOLDFAST_ESI_SCOPES
+from ..core.scope import registration_refusal
 from ..models import DenCharacter, Owner
 from ..tasks import update_den_character as update_den_character_task
 from ..tasks import update_owner as update_owner_task
@@ -31,37 +33,6 @@ def _ownership(token):
     if character is None:
         character = EveCharacter.objects.create_character(token.character_id)
     return CharacterOwnership.objects.get(character=character), character
-
-
-def _add_corporation(request, token):
-    ownership, character = _ownership(token)
-    try:
-        corporation = EveCorporationInfo.objects.get(
-            corporation_id=character.corporation_id
-        )
-    except EveCorporationInfo.DoesNotExist:
-        corporation = EveCorporationInfo.objects.create_corporation(
-            character.corporation_id
-        )
-    owner, _created = Owner.objects.update_or_create(
-        corporation=corporation,
-        defaults={"character_ownership": ownership, "is_enabled": True},
-    )
-    update_owner_task.delay(owner.pk)
-
-
-def _add_den_character(request, token):
-    ownership, _character = _ownership(token)
-    den_character, _created = DenCharacter.objects.update_or_create(
-        character_ownership=ownership, defaults={"is_enabled": True}
-    )
-    update_den_character_task.delay(den_character.pk)
-
-
-def _corporation_added(character: EveCharacter) -> bool:
-    return Owner.objects.filter(
-        character_ownership__character=character
-    ).exists()
 
 
 def _den_added(character: EveCharacter) -> bool:
@@ -78,30 +49,53 @@ def _add_all(request, token):
     owner is registered as well when the user holds `manage_owners`; whether
     the character actually has the in-game Station Manager role only shows up
     on the first sync, which ESI answers with a 403 if they do not.
+
+    A corporation outside the tracked alliance is refused the same way the
+    Tokens page refuses it -- but not by raising. charlink swallows any
+    exception from here into "Failed to add character", which loses the
+    reason and, since the den half has by then succeeded, is also untrue. The
+    refusal goes out as a warning of its own and the function returns
+    normally, so charlink's success line covers the den part that did happen.
     """
     ownership, character = _ownership(token)
+
+    # Decided before anything is written: the guard may refresh the
+    # corporation from ESI, and its answer does not depend on the den half.
+    corporation = refusal = None
+    if request.user.has_perm("holdfast.manage_owners"):
+        corporation = _corporation_for(character)
+        refusal = registration_refusal(corporation, character, request.user)
 
     den_character, _created = DenCharacter.objects.update_or_create(
         character_ownership=ownership, defaults={"is_enabled": True}
     )
     update_den_character_task.delay(den_character.pk)
 
-    if not request.user.has_perm("holdfast.manage_owners"):
+    if corporation is None:
+        return
+    if refusal is not None:
+        messages.warning(request, refusal)
         return
 
-    try:
-        corporation = EveCorporationInfo.objects.get(
-            corporation_id=character.corporation_id
-        )
-    except EveCorporationInfo.DoesNotExist:
-        corporation = EveCorporationInfo.objects.create_corporation(
-            character.corporation_id
-        )
+    # No is_enabled in the defaults, for the reason views/owners gives: a
+    # re-added token must not switch on an owner a manager disabled.
     owner, _created = Owner.objects.update_or_create(
         corporation=corporation,
-        defaults={"character_ownership": ownership, "is_enabled": True},
+        defaults={"character_ownership": ownership},
     )
+    if not owner.is_enabled:
+        messages.info(
+            request,
+            f"{corporation} is disabled; enable it on the Tokens page when ready.",
+        )
     update_owner_task.delay(owner.pk)
+
+
+def _corporation_for(character):
+    try:
+        return EveCorporationInfo.objects.get(corporation_id=character.corporation_id)
+    except EveCorporationInfo.DoesNotExist:
+        return EveCorporationInfo.objects.create_corporation(character.corporation_id)
 
 
 app_import = AppImport(

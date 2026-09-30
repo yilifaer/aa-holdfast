@@ -2,20 +2,24 @@
 
 from datetime import timedelta
 
+from allianceauth.eveonline.models import EveAllianceInfo
 from django.contrib import messages
 from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
+from ..app_settings import HOLDFAST_TRACK_EXTRA_ALLIANCE_IDS
+from ..core.scope import NOT_SET_LABEL, alliance_name, bootstrap_home_alliance
 from ..models import (
     HoldfastConfig,
+    Owner,
     PowerState,
-    Skyhook,
     SovCampaign,
     SovSystem,
     SystemCostIndex,
     Webhook,
 )
+from ..tasks import update_sov_map
 from .common import (
     require_any,
     routes_for_section,
@@ -24,6 +28,7 @@ from .common import (
     sov_can_view_all,
     visible_alliance_ids,
     visible_hubs,
+    visible_skyhooks,
 )
 
 SOV_ANY = ("sov_basic", "sov_officer", "sov_manage")
@@ -77,10 +82,14 @@ def dashboard(request):
             # If a den is siphoning workforce in this same system, say so --
             # that is a different problem with a different fix from "nobody
             # hauled fuel".
-            siphoned = Skyhook.objects.filter(
-                eve_solar_system_id=hub.solar_system_id,
-                workforce_siphon_percent__isnull=False,
-            ).exists()
+            siphoned = (
+                visible_skyhooks(user)
+                .filter(
+                    eve_solar_system_id=hub.solar_system_id,
+                    workforce_siphon_percent__isnull=False,
+                )
+                .exists()
+            )
             items.append(
                 {
                     "severity": "danger",
@@ -318,8 +327,28 @@ BOOL_FIELDS = (
 )
 
 
+def _alliance_choices(config):
+    """(id, label) pairs for the tracked-alliance select.
+
+    Every alliance Auth knows, by name, plus the current value when it is not
+    among them -- an id typed in by hand, or an alliance whose row is gone --
+    so the form never silently shows something other than what is saved.
+    """
+    choices = [
+        (alliance_id, f"{name} ({alliance_id})")
+        for alliance_id, name in EveAllianceInfo.objects.order_by(
+            "alliance_name"
+        ).values_list("alliance_id", "alliance_name")
+    ]
+    current = config.home_alliance_id
+    if current is not None and current not in {value for value, _ in choices}:
+        choices.insert(0, (current, alliance_name(current)))
+    return choices
+
+
 @require_any(*SOV_ADMIN)
 def settings_view(request):
+    config = HoldfastConfig.get_solo()
     return render(
         request,
         "holdfast/sov/settings.html",
@@ -327,6 +356,8 @@ def settings_view(request):
             request,
             routes=routes_for_section("sov"),
             webhooks=Webhook.objects.all(),
+            alliance_choices=_alliance_choices(config),
+            not_set_label=NOT_SET_LABEL,
         ),
     )
 
@@ -336,6 +367,16 @@ def settings_view(request):
 def settings_save(request):
     config = HoldfastConfig.get_solo()
     errors = []
+    previous_home = config.home_alliance_id
+
+    raw = request.POST.get("home_alliance_id", "").strip()
+    if raw == "":
+        config.home_alliance_id = None
+    else:
+        try:
+            config.home_alliance_id = int(raw)
+        except ValueError:
+            errors.append(f"Tracked alliance: '{raw}' is not an alliance id")
 
     for name in FLOAT_FIELDS:
         raw = request.POST.get(name, "").strip()
@@ -376,6 +417,25 @@ def settings_save(request):
     save_routes(request, "sov")
     config.save()
     messages.success(request, "Sovereignty settings saved.")
+
+    if config.home_alliance_id is None:
+        # The blank option says the first registered corporation decides, and
+        # with corporations already registered that has to happen now: left
+        # unset, every alliance-bearing owner would drop out of scope and the
+        # next map update would delete the whole sovereignty board.
+        chosen = bootstrap_home_alliance(
+            Owner, HoldfastConfig, HOLDFAST_TRACK_EXTRA_ALLIANCE_IDS
+        )
+        if chosen is not None:
+            config.refresh_from_db(fields=["home_alliance_id"])
+            messages.info(
+                request,
+                f"Tracked alliance set to {alliance_name(chosen)} from the corporations "
+                "already registered.",
+            )
+    if config.home_alliance_id != previous_home:
+        # The sovereignty board follows the tracked set, not the clock.
+        update_sov_map.delay()
     return redirect("holdfast:sov_settings")
 
 

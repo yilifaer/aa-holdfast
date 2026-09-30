@@ -3,6 +3,7 @@
 from django.core.management.base import BaseCommand
 
 from holdfast.core import alerts, esi_sync
+from holdfast.core.scope import inactive_reason
 from holdfast.models import Owner
 
 
@@ -10,7 +11,15 @@ class Command(BaseCommand):
     help = "Sync all owners, refresh the public routes and evaluate alerts."
 
     def add_arguments(self, parser):
-        parser.add_argument("--owner", type=int, help="Only sync this owner PK")
+        parser.add_argument(
+            "--owner",
+            type=int,
+            help=(
+                "Only sync this owner PK. Unlike the scheduled sync this reaches "
+                "a disabled or out-of-scope owner too, so a token can be checked "
+                "without switching the owner on."
+            ),
+        )
         parser.add_argument("--skip-alerts", action="store_true")
         parser.add_argument("--skip-public", action="store_true")
         parser.add_argument(
@@ -25,12 +34,19 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        owners = Owner.objects.filter(is_enabled=True)
+        owners = Owner.objects.active()
         if options["owner"]:
-            owners = owners.filter(pk=options["owner"])
+            # The debugging path: picked from every owner, with a warning
+            # rather than a refusal when the schedule would skip it.
+            owners = Owner.objects.filter(pk=options["owner"])
 
         for owner in owners:
             self.stdout.write(f"Syncing {owner} ...")
+            reason = inactive_reason(owner)
+            if reason is not None:
+                self.stdout.write(
+                    self.style.WARNING(f"  the scheduled sync skips this owner: {reason}")
+                )
             try:
                 stats = esi_sync.update_owner(owner, detail_budget=options["budget"])
             except Exception as exc:  # noqa: BLE001

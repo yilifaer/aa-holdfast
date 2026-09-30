@@ -21,6 +21,7 @@ from ..models import (
     HoldfastConfig,
     MercenaryDen,
     MercenaryTacticalOperation,
+    Owner,
     PowerState,
     ReagentThreshold,
     Skyhook,
@@ -182,10 +183,11 @@ def den_count(user) -> int:
 
         # Your own den eating our own workforce. The officer board counts these
         # too, further down; for an operator it is the one item here they can
-        # act on themselves.
+        # act on themselves. "Our" workforce is an active owner's: a slot on a
+        # disabled or out-of-scope owner's skyhook exists, but is not ours.
         total += mine.filter(
             anarchy_level__in=SIPHONING_LEVELS,
-            slot__isnull=False,
+            slot__skyhook__owner__in=Owner.objects.active(),
         ).count()
 
         if den_can_view_all(user):

@@ -25,6 +25,11 @@ from .models import (
 
 @admin.register(Owner)
 class OwnerAdmin(admin.ModelAdmin):
+    """Unguarded on purpose. The Tokens page and charlink refuse a corporation
+    outside the tracked alliance (core.scope.registration_refusal); an admin
+    can create anything here, and an owner outside the tracked alliance simply
+    sits on the Tokens page marked as not synced."""
+
     list_display = ("corporation", "character_ownership", "is_enabled", "last_sync_at", "last_sync_ok")
     list_filter = ("is_enabled", "last_sync_ok")
     readonly_fields = ("last_sync_at", "last_sync_ok", "last_error")

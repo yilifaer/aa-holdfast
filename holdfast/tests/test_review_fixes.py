@@ -215,6 +215,10 @@ class CrossAllianceWriteTests(TestCase):
 
         _ours, our_corp, self.our_slot = alliance(99000010, 98000020, "Ours")
         _theirs, _their_corp, self.their_slot = alliance(99000011, 98000021, "Theirs")
+        # The boundary has a name now: only the tracked alliance is in scope.
+        config = HoldfastConfig.get_solo()
+        config.home_alliance_id = 99000010
+        config.save()
 
         self.user = User.objects.create_user("insider")
         self.user.user_permissions.set(

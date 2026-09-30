@@ -17,7 +17,9 @@ from functools import wraps
 
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
+from django.db.models import Q
 
+from ..core.scope import tracked_alliance_ids
 from ..models import DenSlot, Owner, Skyhook, SovHub
 
 # --------------------------------------------------------------------------
@@ -103,33 +105,40 @@ def require_any(*codenames):
 def visible_owners(user):
     """Registered corporations whose data this user may see.
 
-    Scoped to the user's own alliance rather than everything on the server, so
-    an install serving more than one alliance keeps them apart by default.
+    Only active owners -- enabled and inside the tracked alliance -- are ever
+    visible, so a disabled owner's structures leave every page and badge
+    together (see ``OwnerQuerySet``). Within that, a member of a tracked
+    alliance sees their own alliance's corporations and the alliance-less
+    holding corporations, which belong to nobody else; a main with no alliance
+    sees only its own corporation.
     """
+    active = Owner.objects.active()
     if user.is_superuser:
-        return Owner.objects.all()
+        return active
 
     character = getattr(user.profile, "main_character", None)
     if not character:
         return Owner.objects.none()
 
     if character.alliance_id:
-        return Owner.objects.filter(
-            corporation__alliance__alliance_id=character.alliance_id
+        if character.alliance_id not in tracked_alliance_ids():
+            return Owner.objects.none()
+        return active.filter(
+            Q(corporation__alliance__alliance_id=character.alliance_id)
+            | Q(corporation__alliance__isnull=True)
         )
-    return Owner.objects.filter(corporation__corporation_id=character.corporation_id)
+    return active.filter(corporation__corporation_id=character.corporation_id)
 
 
 def visible_alliance_ids(user):
+    """Alliances whose sovereignty rows this user may see: the tracked set,
+    narrowed to the user's own alliance unless they are a superuser."""
+    tracked = tracked_alliance_ids()
     if user.is_superuser:
-        return set(
-            Owner.objects.exclude(corporation__alliance__isnull=True).values_list(
-                "corporation__alliance__alliance_id", flat=True
-            )
-        )
+        return tracked
     character = getattr(user.profile, "main_character", None)
     if character and character.alliance_id:
-        return {character.alliance_id}
+        return {character.alliance_id} & tracked
     return set()
 
 

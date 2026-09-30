@@ -107,7 +107,8 @@ def dashboard(request):
     for den in mine:
         if not den.is_siphoning:
             continue
-        skyhook = den.slot.skyhook if den.slot else None
+        # Only an active owner's skyhook is ours; see is_on_our_ground.
+        skyhook = den.slot.skyhook if den.is_on_our_ground else None
         percent, taken, _certainty = (
             skyhook.siphon_estimate if skyhook else (None, None, None)
         )

@@ -30,6 +30,7 @@ from ..models import (
     AlertLog,
     AlertRoute,
     HoldfastConfig,
+    Owner,
     PowerState,
     ReagentThreshold,
     Skyhook,
@@ -38,8 +39,18 @@ from ..models import (
     SovSystem,
     Webhook,
 )
+from .scope import tracked_alliance_ids
 
 logger = logging.getLogger(__name__)
+
+
+def _active_owner_ids() -> set:
+    """Owners whose structures may alert. Every check here walks *all* rows
+    and disarms the ones outside this set, so the disarm set is exactly the
+    complement of the firing set: a key left behind by a disabled owner would
+    otherwise suppress the alert when it is switched back on still starved or
+    still reinforced."""
+    return set(Owner.objects.active().values_list("pk", flat=True))
 
 COLOR_INFO = 0x3A87AD
 COLOR_WARNING = 0xF0AD4E
@@ -278,7 +289,11 @@ def check_hub_fuel() -> int:
         "critical": COLOR_DANGER,
     }
 
-    for hub in SovHub.objects.select_related("owner__corporation", "eve_solar_system"):
+    # Stamp keys, nothing to disarm: an inactive owner's hubs are simply not
+    # looked at.
+    for hub in SovHub.objects.filter(owner_id__in=_active_owner_ids()).select_related(
+        "owner__corporation", "eve_solar_system"
+    ):
         hours = hub.hours_of_fuel_left
         if hours is None or not hub.fuel_expires_at:
             continue
@@ -363,10 +378,11 @@ def check_hub_upgrades() -> int:
     if not config.notify_upgrade_offline:
         return 0
     sent = 0
+    active = _active_owner_ids()
     for hub in SovHub.objects.select_related("owner__corporation", "eve_solar_system"):
         starved = [u for u in hub.upgrades.all() if u.power_state == PowerState.LOW]
         key = f"upglow:{hub.hub_id}"
-        if not starved:
+        if hub.owner_id not in active or not starved:
             _disarm(key)
             continue
         if _already_sent(key):
@@ -426,8 +442,12 @@ def check_skyhook_theft() -> int:
     horizon = now + timedelta(minutes=config.skyhook_theft_lead_minutes)
     rules = {r.type_id: r for r in ReagentThreshold.objects.select_related("eve_type")}
 
+    # Keys carry the window's start, so there is nothing to disarm here.
     candidates = Skyhook.objects.filter(
-        theft_start__isnull=False, theft_start__lte=horizon, theft_end__gte=now
+        owner_id__in=_active_owner_ids(),
+        theft_start__isnull=False,
+        theft_start__lte=horizon,
+        theft_end__gte=now,
     ).select_related("owner__corporation", "eve_planet", "eve_solar_system")
 
     for skyhook in candidates:
@@ -484,11 +504,12 @@ def check_skyhook_theft() -> int:
 def check_skyhook_attacks() -> int:
     """Fire when an owned skyhook enters a reinforced state."""
     sent = 0
+    active = _active_owner_ids()
     for skyhook in Skyhook.objects.select_related(
         "owner__corporation", "eve_planet", "eve_solar_system"
     ):
         key = f"reinf:{skyhook.skyhook_id}"
-        if not skyhook.is_under_attack:
+        if skyhook.owner_id not in active or not skyhook.is_under_attack:
             _disarm(key)
             continue
         stamped = f"{key}:{skyhook.state}"
@@ -535,10 +556,13 @@ def check_adm() -> int:
     if threshold is None:
         return 0
     sent = 0
+    # Explicitly the tracked set, not whatever rows the last map update left:
+    # the settings page can narrow it between two runs.
+    tracked = tracked_alliance_ids()
     for system in SovSystem.objects.select_related("eve_solar_system"):
         adm = system.activity_defense_multiplier
         key = f"adm:{system.solar_system_id}"
-        if adm is None or adm >= threshold:
+        if system.alliance_id not in tracked or adm is None or adm >= threshold:
             _disarm(key)
             continue
         if _already_sent(key):
@@ -578,15 +602,25 @@ def check_hub_reinforced() -> int:
     structure route reports the daily vulnerability window whether or not
     anyone turned up. Edge-triggered on the campaign existing, so it fires once
     per event and re-arms when the campaign resolves.
+
+    "Ours" is the active owners' hubs, and no active hubs means nothing is
+    ours -- not everything. This used to fall back to every IHUB campaign in
+    a tracked system when the set was empty, which the Disable button turned
+    into a one-click way to get an alert per campaign, hubs of corporations
+    nobody ever registered included.
     """
     sent = 0
-    ours = set(SovHub.objects.values_list("hub_id", flat=True))
+    ours = set(
+        SovHub.objects.filter(owner_id__in=_active_owner_ids()).values_list(
+            "hub_id", flat=True
+        )
+    )
     live = set()
 
     for campaign in SovCampaign.objects.filter(
         event_type=SovCampaign.EventType.IHUB
     ).select_related("eve_solar_system"):
-        if ours and campaign.structure_id not in ours:
+        if campaign.structure_id not in ours:
             continue
         key = f"sovreinf:{campaign.campaign_id}"
         live.add(key)

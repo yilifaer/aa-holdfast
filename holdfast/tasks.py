@@ -20,6 +20,7 @@ from .app_settings import (
     HOLDFAST_STALE_PRUNE_DAYS,
 )
 from .core import alerts, den_sync, esi_sync
+from .core.scope import inactive_reason
 from .models import AlertLog, DenCharacter, Owner
 
 logger = logging.getLogger(__name__)
@@ -27,10 +28,10 @@ logger = logging.getLogger(__name__)
 
 @shared_task
 def update_all_owners():
-    """Kick off a sync for every enabled owner, spread over a few minutes."""
-    owners = list(Owner.objects.filter(is_enabled=True))
+    """Kick off a sync for every active owner, spread over a few minutes."""
+    owners = list(Owner.objects.active())
     if not owners:
-        logger.info("No enabled owners to sync")
+        logger.info("No active owners to sync")
         return 0
     jitter = max(HOLDFAST_OWNER_SYNC_JITTER_SECONDS, 0)
     for owner in owners:
@@ -44,9 +45,19 @@ def update_all_owners():
 def update_owner(owner_pk):
     """Refresh one corporation's hubs and skyhooks."""
     try:
-        owner = Owner.objects.select_related("corporation").get(pk=owner_pk)
+        owner = Owner.objects.select_related("corporation__alliance").get(pk=owner_pk)
     except Owner.DoesNotExist:
         logger.warning("Owner %s no longer exists", owner_pk)
+        return None
+
+    # Checked here as well as in the fan-out: the task is also queued straight
+    # from a registration, and an owner can leave the tracked alliance between
+    # being queued and being run. Recorded on the owner, not raised, for the
+    # same reason as a missing token below.
+    reason = inactive_reason(owner)
+    if reason is not None:
+        logger.info("%s: not synced -- %s", owner, reason)
+        owner.mark_sync(False, reason)
         return None
 
     try:

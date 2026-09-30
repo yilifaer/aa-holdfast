@@ -9,6 +9,19 @@
     <form method="post" action="{% url 'holdfast:sov_settings_save' %}">
         {% csrf_token %}
 
+        <div class="holdfast-section-title">{% translate "Tracked alliance" %}</div>
+        <div class="row g-3 mb-4">
+            <div class="col-md-6">
+                <select name="home_alliance_id" class="form-select">
+                    <option value="" {% if config.home_alliance_id is None %}selected{% endif %}>{{ not_set_label }}</option>
+                    {% for alliance_id, label in alliance_choices %}
+                        <option value="{{ alliance_id }}" {% if alliance_id == config.home_alliance_id %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+                <div class="form-text">{% translate "Whose sovereignty this install follows. Corporations outside it cannot be registered and are not synced; extra alliances go in HOLDFAST_TRACK_EXTRA_ALLIANCE_IDS in local.py." %}</div>
+            </div>
+        </div>
+
         <div class="holdfast-section-title">{% translate "Fuel bands (days remaining)" %}</div>
         <div class="row g-3 mb-4">
             <div class="col-md-4">

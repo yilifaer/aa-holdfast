@@ -4,6 +4,83 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses
 [semantic versioning](https://semver.org/).
 
+## [0.1.9] - 2026-10-01
+
+### Added
+
+- **A tracked alliance.** The install now knows whose sovereignty it follows:
+  set from the first corporation registered (an upgrade picks the alliance
+  most already-registered corporations are in), shown on the Tokens page,
+  changeable on the SOV settings page. `HOLDFAST_TRACK_EXTRA_ALLIANCE_IDS` still adds more.
+  A corporation outside it is refused at registration -- on the Tokens page
+  and through charlink alike -- with a message naming the corporation, its
+  alliance, the tracked alliance and what to do about it.
+- **Enable / Disable on the Tokens page.** Until now the only way to switch a
+  corporation off was Django admin. A disabled corporation keeps its rows and
+  comes back without a resync. Other people's sidebar badges catch up within
+  a minute; the badge counts are cached that long per user.
+
+### Changed
+
+- **Tracked alliances are no longer derived from the registered corporations.**
+  That derivation is what made one member's alt in another alliance track
+  that alliance. A corporation whose alliance is outside the tracked set is
+  not synced, and says so in its sync result.
+- **A disabled corporation disappears everywhere.** Its hubs, skyhooks and den
+  slots leave every page, every sidebar badge and every alert check while it
+  is off; before, only the sync stopped, and the alerts kept firing on frozen
+  data. The same rule now covers the two spots that read all skyhooks
+  regardless of owner: the "a den is siphoning here" note on the SOV
+  dashboard and the "ours" flag on the raid target list.
+- Re-registering a token no longer switches on a corporation that was
+  disabled on purpose; the message says it is still disabled.
+- An alliance-less corporation registered by a member of the tracked alliance
+  is now visible to that alliance's officers. Before, only a superuser or a
+  user whose main was in the same corporation ever saw its structures.
+- `holdfast_update --owner N` reaches a disabled or out-of-scope owner, with a
+  warning, so a token can be checked without switching the owner on.
+- Registering a corporation refreshes its Auth row from ESI first -- one
+  cached public call -- so the alliance the guard judges is the one scope
+  will read. Auth otherwise refreshes corporations every six hours, and a row
+  made before the corporation joined an alliance said "no alliance" for that
+  long.
+- The "sov hub reinforced" check treats no active hub as nothing being ours.
+  It used to fall back to every IHUB campaign in a tracked system, which the
+  Disable button made a one-click state to reach.
+- "On our ground" for a mercenary den now means on an active corporation's
+  skyhook. Den slots are made for every skyhook on the install, a disabled or
+  out-of-scope corporation's included, and a member's den on one of those
+  used to count as siphoning our own workforce on their dashboard and badge.
+- The Tokens page works out for itself why a corporation is not synced,
+  instead of waiting for a sync that never runs to write it down. A
+  corporation that fell outside the tracked alliance after a settings change
+  used to keep the green result of its last sync beside the "not synced"
+  badge.
+- The tracked-alliance upgrade is two migrations: 0008 adds the column, 0009
+  fills it. On MySQL a column is committed as soon as it is added, so a data
+  step failing in the same migration would have left the column in place and
+  the retry failing on a duplicate. A non-numeric entry in
+  `HOLDFAST_TRACK_EXTRA_ALLIANCE_IDS` is skipped with a warning rather than
+  raised on, as it was harmless before.
+
+### Fixed
+
+- **Registering a corporation from another alliance pulled that alliance's
+  whole sovereignty map down and alerted on it.** On one install that was 104
+  "ADM below threshold" systems on the dashboard and in the sidebar badge, and
+  one Discord message per system.
+- Sovereignty rows lingered after nothing was tracked any more; the map update
+  returned early instead of clearing them. The industry cost table did the
+  same. Both are cleared now, and a map update that comes back unchanged still
+  drops rows for alliances no longer tracked -- changing the tracked alliance
+  used to leave the old one's systems in place until the map itself changed.
+- Tracking a new alliance -- setting one where none was, or adding an extra
+  in local.py -- fetches the map afresh at once. The map update remembers
+  which tracked set its last fetch was for and forces one whenever that
+  differs; before, a newly tracked alliance with no rows yet waited on the
+  map's ETag, and the settings page's promise of an immediate refresh came
+  back as "unchanged".
+
 ## [0.1.8] - 2026-09-12
 
 ### Added

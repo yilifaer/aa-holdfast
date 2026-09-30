@@ -14,8 +14,22 @@
         </div>
     </div>
 
+    <p class="mb-3">
+        <strong>{% translate "Tracking:" %}</strong>
+        {% if home_alliance_name %}{{ home_alliance_name }}{% else %}<span class="text-body-secondary">{{ not_set_label }}</span>{% endif %}
+        {% if extra_alliances %}
+            <span class="text-body-secondary">{% translate "plus" %} {{ extra_alliances|join:", " }} {% translate "from HOLDFAST_TRACK_EXTRA_ALLIANCE_IDS" %}</span>
+        {% endif %}
+        &mdash;
+        {% if can_manage_sov %}
+            <a href="{% url 'holdfast:sov_settings' %}">{% translate "change it on the SOV settings page" %}</a>
+        {% else %}
+            <span class="text-body-secondary">{% translate "a SOV manager can change it on the SOV settings page" %}</span>
+        {% endif %}
+    </p>
+
     <div class="alert alert-secondary">
-        {% blocktranslate %}Each corporation needs its own token, from a character holding the in-game <strong>Station Manager</strong> role. A token only ever covers the corporation that character belongs to -- an alliance executor token does not cover member corporations.{% endblocktranslate %}
+        {% blocktranslate %}Each corporation needs its own token, from a character holding the in-game <strong>Station Manager</strong> role. A token only ever covers the corporation that character belongs to -- an alliance executor token does not cover member corporations. Only corporations in the tracked alliance can be registered.{% endblocktranslate %}
     </div>
 
     {% if not owners %}
@@ -32,13 +46,21 @@
                         <th>{% translate "Enabled" %}</th>
                         <th>{% translate "Last sync" %}</th>
                         <th>{% translate "Result" %}</th>
+                        <th></th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for owner in owners %}
                         <tr>
                             <td>{{ owner.corporation.corporation_name }}</td>
-                            <td class="small">{{ owner.corporation.alliance.alliance_name|default:"-" }}</td>
+                            <td class="small">
+                                {{ owner.corporation.alliance.alliance_name|default:"-" }}
+                                {% if not owner.in_scope %}
+                                    <span class="badge text-bg-warning" title="{% translate 'This corporation is outside the tracked alliance, so it is never synced.' %}">
+                                        {% translate "outside" %} {{ home_alliance_name|default:_("the tracked alliance") }}, {% translate "not synced" %}
+                                    </span>
+                                {% endif %}
+                            </td>
                             <td class="small">
                                 {% if owner.character_ownership %}
                                     {{ owner.character_ownership.character.character_name }}
@@ -61,7 +83,10 @@
                                 {% endif %}
                             </td>
                             <td class="small">
-                                {% if owner.last_sync_ok %}
+                                {% if owner.scope_reason %}
+                                    {# Whatever the last sync said is stale: this owner is skipped now. #}
+                                    <div class="text-warning">{{ owner.scope_reason }}</div>
+                                {% elif owner.last_sync_ok %}
                                     <span class="badge text-bg-success">{% translate "OK" %}</span>
                                 {% elif owner.last_sync_at %}
                                     <span class="badge text-bg-danger">{% translate "failed" %}</span>
@@ -69,6 +94,16 @@
                                 {% else %}
                                     <span class="text-body-secondary">-</span>
                                 {% endif %}
+                            </td>
+                            <td class="text-end">
+                                <form method="post" action="{% url 'holdfast:owner_toggle' owner.pk %}" class="d-inline">
+                                    {% csrf_token %}
+                                    {% if owner.is_enabled %}
+                                        <button class="btn btn-sm btn-outline-secondary">{% translate "Disable" %}</button>
+                                    {% else %}
+                                        <button class="btn btn-sm btn-outline-success">{% translate "Enable" %}</button>
+                                    {% endif %}
+                                </form>
                             </td>
                         </tr>
                     {% endfor %}

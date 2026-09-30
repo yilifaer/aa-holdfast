@@ -40,7 +40,6 @@ from ..app_settings import (
     HOLDFAST_DETAIL_CALLS_PER_RUN,
     HOLDFAST_RAIDABLE_CACHE_SECONDS,
     HOLDFAST_SKYHOOK_MIN_UNSECURED,
-    HOLDFAST_TRACK_EXTRA_ALLIANCE_IDS,
 )
 from ..models import (
     Owner,
@@ -55,6 +54,7 @@ from ..models import (
     SystemCostIndex,
 )
 from ..providers import esi
+from .scope import tracked_alliance_ids
 from .siphon import detect_siphon
 
 logger = logging.getLogger(__name__)
@@ -530,28 +530,49 @@ def update_owner(owner: Owner, detail_budget: int = None) -> dict:
 # --------------------------------------------------------------------------
 
 
-def tracked_alliance_ids() -> set:
-    """Alliances we keep sovereignty rows for."""
-    ids = set(HOLDFAST_TRACK_EXTRA_ALLIANCE_IDS)
-    for owner in Owner.objects.filter(is_enabled=True).select_related(
-        "corporation__alliance"
-    ):
-        if owner.alliance_id:
-            ids.add(owner.alliance_id)
-    return ids
+# Which tracked set the sovereignty map was last fetched for. The rows in the
+# database cannot tell: a newly tracked alliance has none yet, and an alliance
+# holding no sovereignty never will.
+SOV_MAP_TRACKED_KEY = "holdfast:sov_map_tracked"
 
 
 def update_sov_systems() -> int:
-    """Refresh the ADM board for tracked alliances from the public route."""
+    """Refresh the ADM board for tracked alliances from the public route.
+
+    The tracked set comes from the settings page (see ``core.scope``), so it
+    can change without the sovereignty map itself changing. That is why a 304
+    still prunes, and why the map is fetched afresh whenever the tracked set
+    is not the one the last fetch was made for: otherwise a newly tracked
+    alliance's rows would never appear until the map's ETag moved. The set is
+    remembered in the cache rather than read off the rows, so that an alliance
+    with no sovereignty does not force a full fetch every run.
+    """
     alliance_ids = tracked_alliance_ids()
+    fetched_for = tuple(sorted(alliance_ids))
     if not alliance_ids:
-        logger.info("No tracked alliances, skipping sovereignty map update")
+        # Returning early here left the last tracked alliance's rows in place
+        # for as long as nothing was tracked.
+        stale, _ = SovSystem.objects.all().delete()
+        if stale:
+            logger.info("No tracked alliances; dropped %s sovereignty row(s)", stale)
+        else:
+            logger.info("No tracked alliances, skipping sovereignty map update")
+        cache.set(SOV_MAP_TRACKED_KEY, fetched_for, None)
         return 0
 
+    held = set(SovSystem.objects.values_list("alliance_id", flat=True).distinct())
+    force_refresh = bool(held - alliance_ids) or (
+        cache.get(SOV_MAP_TRACKED_KEY) != fetched_for
+    )
     try:
-        result = esi.client.Sovereignty.GetSovereigntySystems().result()
+        result = esi.client.Sovereignty.GetSovereigntySystems().result(
+            force_refresh=force_refresh
+        )
     except HTTPNotModified:
         logger.info("Sovereignty map unchanged")
+        stale, _ = SovSystem.objects.exclude(alliance_id__in=alliance_ids).delete()
+        if stale:
+            logger.info("Dropped %s system(s) no longer held by a tracked alliance", stale)
         return SovSystem.objects.count()
 
     now = timezone.now()
@@ -597,6 +618,7 @@ def update_sov_systems() -> int:
     if stale:
         logger.info("Dropped %s system(s) no longer held by a tracked alliance", stale)
 
+    cache.set(SOV_MAP_TRACKED_KEY, fetched_for, None)
     return len(wanted)
 
 
@@ -611,7 +633,13 @@ def update_system_costs() -> int:
     tracked = SovSystem.objects.values_list("solar_system_id", "alliance_id")
     wanted = dict(tracked)
     if not wanted:
-        logger.info("No tracked systems, skipping industry cost update")
+        # Nothing tracked means nothing to keep: the sovereignty rows these
+        # were derived from are already gone.
+        stale, _ = SystemCostIndex.objects.all().delete()
+        if stale:
+            logger.info("No tracked systems; dropped %s cost index row(s)", stale)
+        else:
+            logger.info("No tracked systems, skipping industry cost update")
         return 0
 
     try:

@@ -27,8 +27,9 @@ HOLDFAST_SKYHOOK_MIN_UNSECURED = _setting("HOLDFAST_SKYHOOK_MIN_UNSECURED", 100)
 # Warn when a tracked system's ADM drops below this. None disables the check.
 HOLDFAST_ADM_ALERT_THRESHOLD = _setting("HOLDFAST_ADM_ALERT_THRESHOLD", 3.0)
 
-# Extra alliance IDs to keep sovereignty/ADM records for, on top of the
-# alliances the registered owner corporations belong to.
+# Extra alliance IDs to keep sovereignty/ADM records for, on top of the tracked
+# alliance chosen on the SOV settings page. Corporations in these alliances may
+# be registered too. Read in core.scope.
 HOLDFAST_TRACK_EXTRA_ALLIANCE_IDS = _setting("HOLDFAST_TRACK_EXTRA_ALLIANCE_IDS", [])
 
 # Seconds to cache the public raidable-skyhook list in Redis. The ESI route

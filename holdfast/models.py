@@ -92,6 +92,26 @@ class General(models.Model):  # noqa: DJ008 -- never instantiated, see below
         )
 
 
+class OwnerQuerySet(models.QuerySet):
+    """The one place "which owners count" is decided.
+
+    Enabled is a switch on the Tokens page. In scope is about the tracked
+    alliance -- see ``core.scope``. Everything that lists, counts or alerts on
+    an owner's structures goes through ``active()``, so a disabled owner's rows
+    vanish from pages, badges and Discord while it is off and come back when
+    it is switched on, without a resync: the rows are never deleted.
+    """
+
+    def in_scope(self):
+        # Lazy: core.scope imports this module.
+        from .core.scope import owner_scope_q
+
+        return self.filter(owner_scope_q())
+
+    def active(self):
+        return self.filter(is_enabled=True).in_scope()
+
+
 class Owner(models.Model):
     """A corporation whose hubs and skyhooks we pull, plus the token we use."""
 
@@ -110,6 +130,8 @@ class Owner(models.Model):
     last_sync_at = models.DateTimeField(null=True, blank=True)
     last_sync_ok = models.BooleanField(default=False)
     last_error = models.TextField(blank=True)
+
+    objects = OwnerQuerySet.as_manager()
 
     class Meta:
         ordering = ["corporation__corporation_name"]
@@ -650,6 +672,19 @@ class HoldfastConfig(models.Model):
     same values. Keeping them separate was how you ended up with a board that
     had been amber for five days before anything pinged.
     """
+
+    # The alliance this install is for. An id rather than a foreign key so it
+    # never depends on an EveAllianceInfo row existing. Set by the first
+    # registration when nobody has chosen one; ``core.scope`` reads it.
+    home_alliance_id = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text=(
+            "The alliance whose sovereignty is tracked. Corporations outside it "
+            "cannot be registered and are not synced. Blank until the first "
+            "corporation is registered, which decides it."
+        ),
+    )
 
     fuel_warning_days = models.FloatField(
         default=7, help_text="Amber below this many days of fuel left."
@@ -1211,7 +1246,17 @@ class MercenaryDen(models.Model):
 
     @property
     def is_on_our_ground(self) -> bool:
-        return self.slot_id is not None
+        """Sitting on an active owner's skyhook.
+
+        A slot alone does not settle it. Slots are derived from every skyhook
+        on the install -- a disabled or out-of-scope owner's included, since
+        narrowing that would cascade claim history -- and the den is linked to
+        its slot by structure id, so the owner is judged here, where it is
+        read.
+        """
+        if self.slot_id is None:
+            return False
+        return Owner.objects.active().filter(skyhooks__den_slot=self.slot_id).exists()
 
     @property
     def has_details(self) -> bool:

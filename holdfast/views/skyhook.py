@@ -9,7 +9,7 @@ from django.views.decorators.http import require_POST
 from eveuniverse.models import EvePlanet, EveSolarSystem
 
 from ..core.esi_sync import get_raidable_skyhooks
-from ..models import HoldfastConfig, ReagentThreshold, Skyhook, Webhook
+from ..models import HoldfastConfig, ReagentThreshold, Webhook
 from .common import (
     require_any,
     routes_for_section,
@@ -17,6 +17,7 @@ from .common import (
     skyhook_can_manage,
     skyhook_can_view_all,
     stealable_skyhooks,
+    visible_skyhooks,
 )
 
 SKYHOOK_ANY = ("skyhook_basic", "skyhook_officer", "skyhook_manage")
@@ -197,9 +198,9 @@ def raid_targets(request):
         EveSolarSystem.objects.filter(id__in=system_ids).values_list("id", "name")
     )
     ours = set(
-        Skyhook.objects.filter(planet_id__in=planet_ids).values_list(
-            "planet_id", flat=True
-        )
+        visible_skyhooks(request.user)
+        .filter(planet_id__in=planet_ids)
+        .values_list("planet_id", flat=True)
     )
 
     entries = []

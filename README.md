@@ -62,7 +62,10 @@ tab then appears beside Settings in every section, and **Add corporation**
 there takes you through EVE SSO. These are *corporation* endpoints: the
 character needs the in-game **Station Manager** role, and an executor's token
 does not reach member corps. Every corp holding hubs or skyhooks registers its
-own.
+own. The first registration also decides the tracked alliance (below). The
+Tokens page shows what is tracked, and an **Enable / Disable** button on each
+corporation switches it off without deleting anything: its structures leave
+every page, badge and alert while it is off and come back when it is on.
 
 > **An aa-structures token will not do.** That app holds
 > `esi-corporations.read_structures.v1`; these routes need
@@ -74,9 +77,19 @@ which alerts go where on each section's settings page.
 
 **3. Grant permissions** — see [Permissions](#permissions).
 
-**Single alliance only.** Pages filter by alliance, but settings, thresholds and
-Discord channels are one set per install and the alert checks sweep every owner.
-Two alliances sharing an Auth would get each other's warnings. Run a second Auth.
+**One tracked alliance per install.** The first corporation registered decides
+it (an upgrade picks the alliance most registered corporations are in); the Tokens page shows it, and a SOV manager can change it on the SOV
+settings page. Corporations outside it cannot be registered and are never
+synced — a member with a Station Manager alt in another alliance cannot pull
+that alliance's whole sovereignty map onto your dashboard. A corporation with
+no alliance may be registered by a member of the tracked alliance. To follow a
+second alliance's sovereignty alongside, list it in
+`HOLDFAST_TRACK_EXTRA_ALLIANCE_IDS`; its corporations may then be registered
+too. Settings, thresholds and Discord channels are still one set per install,
+and Django admin bypasses the registration guard. Scope follows the
+corporation's alliance as Auth records it: registration refreshes that record
+from ESI first, and Auth refreshes it on its own schedule after that. Two
+alliances wanting separate warnings should run a second Auth.
 
 ## Permissions
 
@@ -210,7 +223,7 @@ HOLDFAST_ESI_COMPATIBILITY_DATE = "2026-08-18"   # must be >= 2026-05-19
 HOLDFAST_DETAIL_CALLS_PER_RUN = 60               # per owner, per run
 HOLDFAST_DEN_DETAIL_CALLS_PER_RUN = 10
 HOLDFAST_SKYHOOK_MIN_UNSECURED = 100             # fallback; see per-reagent bars
-HOLDFAST_TRACK_EXTRA_ALLIANCE_IDS = []
+HOLDFAST_TRACK_EXTRA_ALLIANCE_IDS = []           # tracked alongside the alliance on the SOV settings page
 HOLDFAST_OWNER_SYNC_JITTER_SECONDS = 120
 HOLDFAST_PLANET_RESOLVE_PER_RUN = 60
 HOLDFAST_DEN_NOTIFICATION_MAX_AGE_HOURS = 24

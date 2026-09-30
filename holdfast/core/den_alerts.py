@@ -38,6 +38,7 @@ from .alerts import (
     COLOR_DANGER,
     COLOR_INFO,
     COLOR_WARNING,
+    _active_owner_ids,
     _already_sent,
     _disarm,
     _embed,
@@ -292,11 +293,18 @@ def check_workforce_siphon() -> int:
         return 0
     sent = 0
     cutoff = timezone.now() - timedelta(hours=config.workforce_drop_grace_hours)
+    active = _active_owner_ids()
 
-    for skyhook in Skyhook.objects.filter(
-        workforce_dropped_at__isnull=False
-    ).select_related("eve_planet", "eve_solar_system", "owner__corporation"):
+    # Every skyhook, so the disarm below is the exact complement of what may
+    # fire: an inactive owner's key must not survive to silence the alert
+    # once the owner is active again.
+    for skyhook in Skyhook.objects.select_related(
+        "eve_planet", "eve_solar_system", "owner__corporation"
+    ):
         key = f"siphon:{skyhook.skyhook_id}"
+        if skyhook.owner_id not in active or skyhook.workforce_dropped_at is None:
+            _disarm(key)  # recovered, or not ours to shout about
+            continue
         if skyhook.workforce_dropped_at > cutoff:
             continue  # not yet persistent enough to be worth shouting about
         if _already_sent(key):
@@ -366,10 +374,6 @@ def check_workforce_siphon() -> int:
         _mark_sent(key)
         sent += 1
 
-    # Recovered skyhooks re-arm.
-    for skyhook in Skyhook.objects.filter(workforce_dropped_at__isnull=True):
-        _disarm(f"siphon:{skyhook.skyhook_id}")
-
     return sent
 
 
@@ -384,9 +388,15 @@ def check_siphoned_skyhooks() -> int:
     if not config.notify_den_skyhook_impact:
         return 0
     sent = 0
-    for skyhook in Skyhook.objects.filter(
-        workforce_siphon_percent__isnull=False
-    ).select_related("eve_planet", "eve_solar_system", "owner__corporation"):
+    active = _active_owner_ids()
+    for skyhook in Skyhook.objects.select_related(
+        "eve_planet", "eve_solar_system", "owner__corporation"
+    ):
+        if skyhook.owner_id not in active or skyhook.workforce_siphon_percent is None:
+            # Back to a round number means the den is gone; an inactive owner
+            # is not ours to speak for. Either way the key goes.
+            _disarm(f"siphonfp:{skyhook.skyhook_id}")
+            continue
         key = f"siphonfp:{skyhook.skyhook_id}:{skyhook.workforce_siphon_percent}"
         if _already_sent(key):
             continue
@@ -434,10 +444,6 @@ def check_siphoned_skyhooks() -> int:
             continue
         _mark_sent(key)
         sent += 1
-
-    # Anything that went back to a round number has had its den removed.
-    for skyhook in Skyhook.objects.filter(workforce_siphon_percent__isnull=True):
-        _disarm(f"siphonfp:{skyhook.skyhook_id}")
 
     return sent
 
