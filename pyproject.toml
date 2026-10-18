@@ -29,6 +29,11 @@ classifiers = [
 ]
 dependencies = [
     "allianceauth>=5.2",         # 5.2, 5.4 and latest are what CI installs
+    # Alliance Auth 5.2 leaves this open, and django-sri 1.0 (Python 3.11+,
+    # September 2026) drops the sri_static tag that AA 5.2's own base template
+    # uses -- every page 500s. AA pins <1 from 5.4; this carries the pin back
+    # to 5.2 so a fresh install there does not break on a dependency of ours.
+    "django-sri<1",
     "django-esi>=9.10",          # compatibility-date support
     "django-eveuniverse>=1.5",
     "dhooks-lite>=1.1",

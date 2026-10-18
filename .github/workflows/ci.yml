@@ -38,8 +38,12 @@ jobs:
       - name: Install
         run: |
           python -m pip install --upgrade pip
+          # AA 5.2 leaves django-sri unpinned; django-sri 1.0 (Python 3.11+)
+          # drops the sri_static tag AA 5.2's own templates use. AA 5.4+ pins
+          # <1, and so does this app, but the pin has to be here too or pip
+          # resolves 1.0 first and the install is already broken.
           case "${{ matrix.alliance-auth }}" in
-            5.2) pip install "allianceauth~=5.2.0" "django-esi~=9.10.0" ;;
+            5.2) pip install "allianceauth~=5.2.0" "django-esi~=9.10.0" "django-sri<1" ;;
             5.4) pip install "allianceauth~=5.4.0" "django-esi~=9.10.0" ;;
           esac
           pip install -e .

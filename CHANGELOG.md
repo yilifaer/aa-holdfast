@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **Alliance Auth 5.2 on Python 3.11+ installs a django-sri that breaks Auth's
+  own templates.** AA 5.2 leaves django-sri unpinned and 1.0 (September 2026)
+  drops the `sri_static` tag its base template loads; AA pins `<1` from 5.4.
+  This app now pins `django-sri<1` too, so an AA 5.2 install picking it up does
+  not end up with every page failing. CI's 5.2 line installs the pin as well.
+
 ## [0.1.10] - 2026-10-18
 
 ### Added
