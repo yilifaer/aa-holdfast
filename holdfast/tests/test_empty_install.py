@@ -16,6 +16,7 @@ from allianceauth.eveonline.models import EveCharacter
 from django.contrib.auth.models import User
 from django.contrib.messages.storage.fallback import FallbackStorage
 from django.contrib.sessions.backends.db import SessionStore
+from django.core.cache import cache
 from django.test import RequestFactory, TestCase
 from django.urls import NoReverseMatch, get_resolver, reverse
 
@@ -25,6 +26,10 @@ ACCEPTABLE = (200, 302, 405)
 
 class EmptyInstallTests(TestCase):
     def setUp(self):
+        # TestCase rolls the database back between tests but Redis is shared:
+        # this user takes a pk an earlier module's user had, and a badge count
+        # cached under it within the minute would come back as this user's.
+        cache.clear()
         self.user = User.objects.create_superuser("fresh", "fresh@example.invalid", "x")
         character = EveCharacter.objects.create(
             character_id=95000001,
@@ -115,6 +120,17 @@ class EmptyInstallTests(TestCase):
         for counter in (sov_count, skyhook_count, den_count):
             with self.subTest(counter=counter.__name__):
                 self.assertEqual(counter(self.user), 0)
+
+    def test_a_count_left_in_the_cache_under_this_pk_would_be_served_as_ours(self):
+        """The leak setUp guards against, spelled out: the counter trusts the
+        cache before the database, so what an earlier module cached under the
+        same pk is what this user gets until somebody clears it."""
+        from ..core.attention import den_count
+
+        cache.set(f"holdfast_attention:den:{self.user.pk}", 7, 60)
+        self.assertEqual(den_count(self.user), 7)
+        cache.clear()
+        self.assertEqual(den_count(self.user), 0)
 
 
 class ScheduleTests(TestCase):

@@ -174,6 +174,22 @@ def _content(hook):
     return " ".join(parts) or None
 
 
+def post_to(hook, embed: Embed) -> bool:
+    """Post one embed to one webhook, with that webhook's pings in front.
+
+    The single delivery step, shared by real alerts and the test button on
+    the Webhooks page -- so the test proves the path a real alert takes.
+    """
+    try:
+        DiscordWebhook(hook.url).execute(
+            content=_content(hook), embeds=[embed], username="SOV Monitor"
+        )
+        return True
+    except Exception:  # noqa: BLE001 - one broken hook must not stop the rest
+        logger.exception("Failed to post to webhook %s", hook.name)
+        return False
+
+
 def _send(embed: Embed, category=None) -> bool:
     """Post to the channels configured for this category.
 
@@ -191,13 +207,7 @@ def _send(embed: Embed, category=None) -> bool:
         return False
     delivered = False
     for hook in hooks:
-        try:
-            DiscordWebhook(hook.url).execute(
-                content=_content(hook), embeds=[embed], username="SOV Monitor"
-            )
-            delivered = True
-        except Exception:  # noqa: BLE001 - one broken hook must not stop the rest
-            logger.exception("Failed to post to webhook %s", hook.name)
+        delivered = post_to(hook, embed) or delivered
     return delivered
 
 

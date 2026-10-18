@@ -28,7 +28,7 @@ classifiers = [
     "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
 ]
 dependencies = [
-    "allianceauth>=4.6",
+    "allianceauth>=5.2",         # 5.2, 5.4 and latest are what CI installs
     "django-esi>=9.10",          # compatibility-date support
     "django-eveuniverse>=1.5",
     "dhooks-lite>=1.1",

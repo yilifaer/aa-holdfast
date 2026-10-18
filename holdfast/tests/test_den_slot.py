@@ -136,9 +136,14 @@ class OperationAttentionTests(TestCase):
         from django.contrib.auth.models import Permission, User
         from django.core.cache import cache
 
-        from ..models import DenCharacter, MercenaryDen
+        from ..models import DenCharacter, HoldfastConfig, MercenaryDen
 
         cache.clear()
+        # Every operation counts here; the anarchy bar has tests of its own
+        # in test_operations, and this den never reaches it.
+        config = HoldfastConfig.get_solo()
+        config.mto_anarchy_threshold = 0
+        config.save()
         corporation = EveCorporationInfo.objects.create(
             corporation_id=98000003,
             corporation_name="Golden Fleece",
@@ -158,9 +163,12 @@ class OperationAttentionTests(TestCase):
         from allianceauth.eveonline.models import EveCharacter
 
         self.user = User.objects.create_user("operator2")
-        self.user.user_permissions.add(
-            Permission.objects.get(
-                content_type__app_label="holdfast", codename="den_basic"
+        # The den list rung: operations count only for members who can open
+        # the dashboard they are listed on (test_operations has the other side).
+        self.user.user_permissions.set(
+            Permission.objects.filter(
+                content_type__app_label="holdfast",
+                codename__in=("basic_access", "den_member"),
             )
         )
         self.user = User.objects.get(pk=self.user.pk)  # drop the perm cache

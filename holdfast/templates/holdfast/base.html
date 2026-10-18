@@ -1,9 +1,11 @@
 {% extends 'allianceauth/base-bs5.html' %}
 {% load i18n %}
 {% load static %}
+{% load navactive %}
+{% load holdfast_tags %}
 
 {% block page_title %}{% translate "SOV Monitor" %}{% endblock %}
-{% block header_nav_brand %}{% translate "Tokens" %}{% endblock %}
+{% block header_nav_brand %}{% block holdfast_brand %}{% translate "Tokens" %}{% endblock %} <span class="holdfast-version">v{% holdfast_version %}</span>{% endblock %}
 
 {% block extra_css %}<link rel="stylesheet" href="{% static 'holdfast/holdfast.css' %}">{% endblock %}
 
@@ -11,6 +13,15 @@
     <li class="nav-item"><a class="nav-link" href="{% url 'holdfast:sov_home' %}">{% translate "SOV" %}</a></li>
     <li class="nav-item"><a class="nav-link" href="{% url 'holdfast:skyhook_home' %}">{% translate "Skyhook" %}</a></li>
     <li class="nav-item"><a class="nav-link" href="{% url 'holdfast:den_home' %}">{% translate "Den" %}</a></li>
+{% endblock %}
+
+{% block header_nav_collapse_right %}
+    {% if perms.holdfast.manage_owners %}
+        <li class="nav-item"><a class="nav-link {% navactive request 'holdfast:owners' %}" href="{% url 'holdfast:owners' %}"><i class="fas fa-key"></i> {% translate "Tokens" %}</a></li>
+    {% endif %}
+    {% if perms.holdfast.sov_manage or perms.holdfast.skyhook_manage or perms.holdfast.den_manage %}
+        <li class="nav-item"><a class="nav-link {% navactive request 'holdfast:webhooks holdfast:webhook_edit' %}" href="{% url 'holdfast:webhooks' %}"><i class="fab fa-discord"></i> {% translate "Webhooks" %}</a></li>
+    {% endif %}
 {% endblock %}
 
 {% block content %}<div class="holdfast mb-3">{% block holdfast_content %}{% endblock %}</div>{% endblock %}

@@ -209,13 +209,20 @@ def check_mto_available() -> int:
     now = timezone.now()
     # Both live states, for the same reason the dashboard counts both: an
     # operation somebody has started is still running against its expiry, and
-    # ours arrive from ESI already marked Started.
-    operations = MercenaryTacticalOperation.objects.filter(
-        state__in=(
-            MercenaryTacticalOperation.State.AVAILABLE,
-            MercenaryTacticalOperation.State.STARTED,
+    # ours arrive from ESI already marked Started. One on a den below the
+    # anarchy bar is left out of the query rather than marked sent, so it is
+    # announced the day the den gets there. Dismissal is not consulted: it is
+    # about the member's own board, and the channel was told once already.
+    operations = (
+        MercenaryTacticalOperation.objects.filter(
+            state__in=(
+                MercenaryTacticalOperation.State.AVAILABLE,
+                MercenaryTacticalOperation.State.STARTED,
+            )
         )
-    ).select_related("den__eve_planet", "den__eve_solar_system", "den_character")
+        .on_dens_at(HoldfastConfig.get_solo().mto_anarchy_threshold)
+        .select_related("den__eve_planet", "den__eve_solar_system", "den_character")
+    )
 
     for operation in operations:
         if operation.expires and operation.expires < now:

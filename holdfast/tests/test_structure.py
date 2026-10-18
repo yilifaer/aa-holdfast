@@ -63,7 +63,7 @@ class WriteScopeTests(SimpleTestCase):
 
     def test_every_write_path_is_scoped(self):
         offenders = []
-        for module in ("den", "sov", "skyhook", "owners"):
+        for module in ("den", "sov", "skyhook", "owners", "webhooks"):
             for node in self._post_handlers(module):
                 body = ast.unparse(node)
                 for call in re.finditer(r"get_object_or_404\(([^)]*)\)", body):
@@ -363,7 +363,9 @@ class ReachabilityTests(SimpleTestCase):
 
         # Form targets and SSO callbacks are reached by submitting, not
         # clicking; a page you land on after one is not what this guards.
-        skip = re.compile(r"_(save|test|add|claim|decide|record|revoke|dismiss|withdraw)$|^add_")
+        skip = re.compile(
+            r"_(save|test|add|claim|decide|record|revoke|dismiss|withdraw|delete)$|^add_"
+        )
         pages = [n for n in names if not skip.search(n)]
 
         unreachable = [n for n in pages if f"holdfast:{n}'" not in templates and f'holdfast:{n}"' not in templates]
@@ -374,3 +376,33 @@ class ReachabilityTests(SimpleTestCase):
         for section in SECTIONS:
             nav = _read("templates", "holdfast", section, "base.html")
             self.assertIn("holdfast:owners", nav, f"{section} nav does not offer the owners page")
+
+    def test_the_webhooks_page_is_linked_beside_the_tokens_page(self):
+        """Same reason: webhooks belong to the install, not to a section."""
+        for parts in [(section, "base.html") for section in SECTIONS] + [("base.html",)]:
+            nav = _read("templates", "holdfast", *parts)
+            self.assertIn("holdfast:webhooks", nav, f"{'/'.join(parts)} does not offer the webhooks page")
+
+
+class VersionTagTests(SimpleTestCase):
+    """The version has to be visible without Django admin.
+
+    The alliance's IT asked which version was running and the only answer was
+    "open the admin and look at the package" -- which they cannot. Every base
+    template shows it beside the brand, so it is on every page of the app.
+    """
+
+    BASES = [(section, "base.html") for section in SECTIONS] + [("base.html",)]
+
+    def test_the_tag_reports_the_package_version(self):
+        from .. import __version__
+        from ..templatetags.holdfast_tags import holdfast_version
+
+        self.assertEqual(holdfast_version(), __version__)
+
+    def test_every_base_template_renders_the_tag(self):
+        for parts in self.BASES:
+            with self.subTest(template="/".join(parts)):
+                source = _read("templates", "holdfast", *parts)
+                self.assertIn("{% load holdfast_tags %}", source)
+                self.assertRegex(source, r"\{% block header_nav_brand %\}.*\{% holdfast_version %\}")

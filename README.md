@@ -39,7 +39,9 @@ python manage.py collectstatic --noinput
 supervisorctl restart myauth:
 ```
 
-That is the whole install. Three things worth knowing:
+That is the whole install. The version running shows beside the page title on
+every Holdfast page, so nobody needs Django admin to answer "which one is
+this". Three things worth knowing:
 
 - **`eveuniverse` must be in `INSTALLED_APPS`.** This app has foreign keys into
   its models. Leave it out and Auth will not start. Adding it twice is harmless
@@ -52,7 +54,8 @@ That is the whole install. Three things worth knowing:
   `CELERYBEAT_SCHEDULE["holdfast_update_all_owners"]["schedule"] = crontab(...)`,
   or read [`holdfast/schedule.py`](https://github.com/yilifaer/aa-holdfast/blob/main/holdfast/schedule.py) for what each does.
 
-Requires Alliance Auth 4.6+, django-esi 9.10+ (for compatibility dates),
+Requires Alliance Auth 5.2+ (CI runs 5.2, 5.4 and the latest release), django-esi
+9.10+ (for compatibility dates),
 django-eveuniverse, dhooks-lite, PyYAML.
 
 ## Setup
@@ -72,8 +75,10 @@ every page, badge and alert while it is off and come back when it is on.
 > `esi-structures.read_corporation.v1`. Similar names, different scopes — the
 > Add button mints the right one.
 
-**2. Add a Discord webhook** in Django admin (*Holdfast → Webhooks*), then pick
-which alerts go where on each section's settings page.
+**2. Add a Discord webhook** on the **Webhooks** page — beside Tokens in every
+section's header, open to any section manager; Django admin still works —
+then pick which alerts go where on each section's settings page. **Send test**
+on a webhook posts one sample to that channel alone, pings included.
 
 **3. Grant permissions** — see [Permissions](#permissions).
 
@@ -93,25 +98,28 @@ alliances wanting separate warnings should run a second Auth.
 
 ## Permissions
 
-Each section is a ladder, and every rung includes the ones below it — grant one
-per section, never two.
+One bottom rung for the whole app, then a ladder per section where every rung
+includes the ones below it — grant one per section, never two.
 
 | Section | Member | User | Officer | Manager |
 |---|---|---|---|---|
-| Sovereignty | `sov_basic` | — | `sov_officer` | `sov_manage` |
-| Skyhooks | `skyhook_basic` | — | `skyhook_officer` | `skyhook_manage` |
-| Dens | `den_basic` | `den_member` | `den_officer` | `den_manage` |
+| All sections | `basic_access` | — | — | — |
+| Sovereignty | — | — | `sov_officer` | `sov_manage` |
+| Skyhooks | — | — | `skyhook_officer` | `skyhook_manage` |
+| Dens | — | `den_member` | `den_officer` | `den_manage` |
 
-A den **user** may apply for a den slot — permission to anchor in your space.
-`manage_owners` registers corporation tokens and sits outside the ladders.
+`basic_access` opens the member-facing page of each section: System Cost, Raid
+Targets, and your own dens and timers. A den **user** may also apply for a den
+slot — permission to anchor in your space. `manage_owners` registers
+corporation tokens and sits outside the ladders.
 
-Put the `*_basic` permissions on your **Member state** rather than a group: they
-cover only what any member should see, and a state follows membership, so
-nobody has to be pruned later. A typical split:
+Put `basic_access` on your **Member state** rather than a group: it covers only
+what any member should see, and a state follows membership, so nobody has to
+be pruned later. A typical split:
 
 | Who | Grant |
 |---|---|
-| Member state | `sov_basic`, `skyhook_basic`, `den_basic` |
+| Member state | `basic_access` |
 | Den operators | `den_member` |
 | Den officers | `den_officer` |
 | Sov fuel team | `sov_officer` |
@@ -171,6 +179,15 @@ A member joins a group, claims a free slot through EVE SSO, a manager approves,
 and the den syncs once anchored. Managers can revoke — which does not unanchor
 anything, so the slot says *revoked, den still up* until it comes down.
 
+Tactical operations on your own dens appear on the den dashboard and the
+sidebar badge, and are announced to Discord, once the den is at the anarchy
+level set on the den settings page — 2 by default, since below that nobody
+runs them; 0 counts every operation. An operation on a den below the bar is
+announced the day the den reaches it. **Ignore** on a dashboard row takes that
+one operation off your own dashboard and badge and nothing else. Both the
+rows and the badge count need the dashboard (`den_member` or above); with
+basic access alone your operations show on the timers page only.
+
 ## Alerts
 
 ![A siphon alert in Discord](https://raw.githubusercontent.com/yilifaer/aa-holdfast/main/docs/images/discord-alert.png)
@@ -183,8 +200,11 @@ everyone.
 Per-category routing, so fuel warnings and "something is being shot" can go to
 different channels. Thresholds and switches live on each section's settings
 page, not in `local.py`. A webhook can mention Auth groups instead of @here —
-pick them on the webhook in Django admin; each needs a Discord role of the same
-name, which Auth's Discord service creates.
+pick them on the Webhooks page; each needs a Discord role of the same name,
+which Auth's Discord service creates. A webhook URL must be Discord's own
+(`https://discord.com/api/webhooks/...`, or the `discordapp.com`, canary and
+PTB spellings); the form refuses anything else, since the server posts every
+alert to whatever is saved there.
 
 ```bash
 python manage.py holdfast_test_alerts             # one sample of every alert
@@ -228,6 +248,7 @@ HOLDFAST_OWNER_SYNC_JITTER_SECONDS = 120
 HOLDFAST_PLANET_RESOLVE_PER_RUN = 60
 HOLDFAST_DEN_NOTIFICATION_MAX_AGE_HOURS = 24
 HOLDFAST_DEN_FIRST_SYNC_GRACE_MINUTES = 90
+HOLDFAST_DEN_IDLE_HOURS = 6                      # re-check a character with no dens this often
 HOLDFAST_RAIDABLE_CACHE_SECONDS = 300
 HOLDFAST_STALE_PRUNE_DAYS = 14
 ```

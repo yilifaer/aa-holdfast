@@ -4,6 +4,66 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses
 [semantic versioning](https://semver.org/).
 
+## [0.1.10] - unreleased
+
+### Added
+
+- **The charlink entry is ticked by default**, so a member who links
+  everything in one go links this too. What keeps that affordable is new as
+  well: a den character whose sync finds nothing -- no dens, no operations, no
+  notifications -- is not listed again for `HOLDFAST_DEN_IDLE_HOURS` (default
+  6). Registering or claiming through the app still syncs at once.
+
+- **A Webhooks page.** Discord webhooks could only be made in Django admin,
+  which the people running the alliance's alerts do not have. The page sits
+  beside Tokens in every section's header, is open to any section manager
+  (`sov_manage`, `skyhook_manage` or `den_manage`) and nobody else, and adds,
+  edits and deletes webhooks -- name, URL, enabled, ping, ping groups, notes.
+  **Send test** on a webhook posts one sample to that channel alone, with its
+  own pings, down the same delivery step a real alert takes, and records
+  nothing as sent. Which alerts go where is still chosen on each section's
+  settings page; Django admin still works.
+- **An anarchy bar for tactical operations**, on the den settings page.
+  Operations count on the dashboard and the sidebar badge, and are announced
+  to Discord, only on dens at this anarchy level or above -- 2 by default,
+  since below that nobody runs them; 0 means every operation. One on a den
+  below the bar is skipped rather than recorded as sent, so it is announced
+  the day the den gets there.
+- **Ignore, per tactical operation.** Each operation on the den dashboard's
+  "Yours" list has an Ignore button that takes it off your own dashboard and
+  badge. The timers page and the Discord channel are untouched: the channel
+  was told once when the operation appeared.
+- **The version beside the brand** on every Holdfast page, so nobody needs
+  Django admin to answer "which one is this".
+
+### Changed
+
+- **Alliance Auth 5.2 or newer.** The floor was 4.6, which nobody has run this
+  on since the first week; CI now installs 5.2, 5.4 and the latest release
+  side by side, so what the floor promises is what gets tested.
+- **`sov_basic`, `skyhook_basic` and `den_basic` are one permission,
+  `basic_access`.** Three permissions meant to be granted together were not:
+  one alliance handed out `den_basic` alone, and an outside install looked
+  for the "Can access" every other Auth app declares and found nothing. The
+  upgrade grants `basic_access` to every group, state and user holding any of
+  the three, then deletes them. The one visible side effect: an install that
+  had granted only `den_basic` now shows those members System Cost and Raid
+  Targets too, both public ESI data. The den ladder's labels no longer say
+  "member" for a rung that is gone.
+- The "no webhooks yet" note on the routing table points at the Webhooks page
+  instead of Django admin.
+- A webhook URL has to be Discord's own webhook endpoint over https; the form
+  refuses anything else. The page hands URL entry to section managers, and
+  the server posts every alert to whatever is saved.
+
+### Fixed
+
+- The den badge no longer counts tactical operations for a member with basic
+  access alone. Such a member lands on the information page, which does not
+  list operations, so the light had no page behind it and no way to clear it.
+  Operations count, and Ignore works, for the den list rung and up -- the
+  people who can open the dashboard the button is on.
+
 ## [0.1.9] - 2026-10-01
 
 ### Added

@@ -297,3 +297,13 @@ tr.holdfast-row--critical > td:first-child { font-weight: 600; padding-left: 0.7
   border: 1px dashed var(--bs-border-color);
   border-radius: var(--bs-border-radius);
 }
+
+/* The version beside the brand: inherits the navbar colour, whatever the
+   theme, and steps back from it rather than picking a grey that may not
+   read on a dark bar. */
+.holdfast-version {
+  font-size: 0.7em;
+  font-weight: 400;
+  opacity: 0.6;
+  margin-left: 0.35em;
+}

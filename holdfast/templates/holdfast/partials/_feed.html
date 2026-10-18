@@ -40,6 +40,14 @@ dashboards read identically: severity, when, where, what, detail.
                         </a>
                     </div>
                 {% endif %}
+                {% if item.operation_id %}
+                    <form method="post" action="{% url 'holdfast:den_mto_dismiss' item.operation_id %}">
+                        {% csrf_token %}
+                        <button class="btn btn-sm btn-outline-secondary" title="{% translate 'Take this operation off your dashboard and badge. Nobody else is told.' %}">
+                            {% translate "Ignore" %}
+                        </button>
+                    </form>
+                {% endif %}
             </div>
         {% endfor %}
     </div>

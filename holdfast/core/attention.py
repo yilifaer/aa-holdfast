@@ -153,7 +153,7 @@ def skyhook_count(user) -> int:
 
 
 def den_count(user) -> int:
-    from ..views.common import den_can_enter, den_can_view_all
+    from ..views.common import den_can_enter, den_can_see_list, den_can_view_all
 
     if not den_can_enter(user):
         return 0
@@ -172,14 +172,25 @@ def den_count(user) -> int:
 
         # An operation on one of your own dens is the most ordinary thing this
         # section has to tell a member, and it expires whether or not they log
-        # in. Both live states count; an expired one is nobody's problem.
-        total += MercenaryTacticalOperation.objects.filter(
-            den_character__character_ownership__user=user,
-            state__in=(
-                MercenaryTacticalOperation.State.AVAILABLE,
-                MercenaryTacticalOperation.State.STARTED,
-            ),
-        ).exclude(expires__lt=now).count()
+        # in. Both live states count; an expired one is nobody's problem, nor
+        # is one the member has waved away or one on a den too new to be
+        # worth running. Only for members who can open the dashboard: that is
+        # where operations are listed and where Ignore is, and a badge the
+        # viewer cannot find the reason for is a nag.
+        if den_can_see_list(user):
+            total += (
+                MercenaryTacticalOperation.objects.filter(
+                    den_character__character_ownership__user=user,
+                    state__in=(
+                        MercenaryTacticalOperation.State.AVAILABLE,
+                        MercenaryTacticalOperation.State.STARTED,
+                    ),
+                    dismissed_at__isnull=True,
+                )
+                .exclude(expires__lt=now)
+                .on_dens_at(HoldfastConfig.get_solo().mto_anarchy_threshold)
+                .count()
+            )
 
         # Your own den eating our own workforce. The officer board counts these
         # too, further down; for an operator it is the one item here they can

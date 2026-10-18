@@ -20,7 +20,7 @@ from .common import (
     visible_skyhooks,
 )
 
-SKYHOOK_ANY = ("skyhook_basic", "skyhook_officer", "skyhook_manage")
+SKYHOOK_ANY = ("basic_access", "skyhook_officer", "skyhook_manage")
 SKYHOOK_FULL = ("skyhook_officer", "skyhook_manage")
 SKYHOOK_ADMIN = ("skyhook_manage",)
 

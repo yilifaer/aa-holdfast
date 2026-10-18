@@ -8,7 +8,8 @@ passes only its own categories.
 
 {% if not webhooks %}
     <div class="alert alert-warning py-2 holdfast-sub">
-        {% blocktranslate %}No webhooks exist yet. Add them in Django admin under <strong>Holdfast &rarr; Webhooks</strong> &mdash; the URL is a credential, so it lives there rather than on this page.{% endblocktranslate %}
+        {% url 'holdfast:webhooks' as webhooks_url %}
+        {% blocktranslate %}No webhooks exist yet. Add them on the <a href="{{ webhooks_url }}">Webhooks</a> page, then come back here to choose which alerts go where.{% endblocktranslate %}
     </div>
 {% else %}
     <div class="alert alert-secondary py-2 holdfast-sub">

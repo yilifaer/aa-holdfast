@@ -122,7 +122,7 @@ app_import = AppImport(
             ),
             get_users_with_perms=lambda: users_with_permissions(
                 [
-                    "holdfast.den_basic",
+                    "holdfast.basic_access",
                     "holdfast.den_member",
                     "holdfast.den_officer",
                     "holdfast.den_manage",
@@ -130,10 +130,11 @@ app_import = AppImport(
                 ],
                 require_all=False,
             ),
-            # Off by default: this is not a scope every alt needs, and ticking
-            # it for everyone would burn ESI calls on characters that will
-            # never anchor anything.
-            default_initial_selection=False,
+            # On by default, so a member who links everything in one go links
+            # this too. Most characters will never anchor a den; what keeps
+            # that from costing three ESI calls each every twenty minutes is
+            # DenCharacter.idle_until, not this flag.
+            default_initial_selection=True,
         ),
     ],
 )

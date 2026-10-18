@@ -1,0 +1,106 @@
+{% extends "holdfast/base.html" %}
+{% load i18n %}
+
+{% block holdfast_brand %}{% translate "Webhooks" %}{% endblock %}
+
+{% block holdfast_content %}
+    <div class="alert alert-secondary">
+        {% blocktranslate %}The Discord channels alerts can be posted to. Which alert goes to which channel is chosen on each section's settings page; a category with nothing ticked there goes to every enabled webhook. The URL is a credential, which is why only section managers see this page.{% endblocktranslate %}
+    </div>
+
+    {% if not webhooks %}
+        <div class="alert alert-info">{% translate "No webhooks yet. Add one below, then route alerts to it on each section's settings page." %}</div>
+    {% else %}
+        <div class="table-responsive">
+            <table class="table table-sm align-middle">
+                <thead>
+                    <tr>
+                        <th>{% translate "Name" %}</th>
+                        <th>{% translate "Enabled" %}</th>
+                        <th>{% translate "Ping" %}</th>
+                        <th>{% translate "Groups" %}</th>
+                        <th>{% translate "Notes" %}</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for webhook in webhooks %}
+                        <tr>
+                            <td>{{ webhook.name }}</td>
+                            <td>
+                                {% if webhook.is_enabled %}
+                                    <span class="badge text-bg-success">{% translate "yes" %}</span>
+                                {% else %}
+                                    <span class="badge text-bg-secondary">{% translate "no" %}</span>
+                                {% endif %}
+                            </td>
+                            <td class="small">{{ webhook.get_ping_type_display }}</td>
+                            <td class="small">{{ webhook.ping_groups.all|join:", "|default:"-" }}</td>
+                            <td class="small">{{ webhook.notes }}</td>
+                            <td class="text-end text-nowrap">
+                                <a class="btn btn-sm btn-outline-secondary" href="{% url 'holdfast:webhook_edit' webhook.pk %}">{% translate "Edit" %}</a>
+                                <form method="post" action="{% url 'holdfast:webhook_test' webhook.pk %}" class="d-inline">
+                                    {% csrf_token %}
+                                    <button class="btn btn-sm btn-outline-secondary"><i class="fab fa-discord"></i> {% translate "Send test" %}</button>
+                                </form>
+                                <form method="post" action="{% url 'holdfast:webhook_delete' webhook.pk %}" class="d-inline"
+                                      onsubmit="return confirm('{% translate "Delete this webhook? Alerts routed only to it fall back to every enabled webhook." %}');">
+                                    {% csrf_token %}
+                                    <button class="btn btn-sm btn-outline-danger">{% translate "Delete" %}</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+
+    <div class="holdfast-section-title">
+        {% if editing %}{% translate "Edit" %} {{ editing.name }}{% else %}{% translate "Add a webhook" %}{% endif %}
+    </div>
+    <form method="post" action="{% if editing %}{% url 'holdfast:webhook_edit' editing.pk %}{% else %}{% url 'holdfast:webhook_add' %}{% endif %}">
+        {% csrf_token %}
+        {% for error in form.non_field_errors %}
+            <div class="alert alert-danger py-2">{{ error }}</div>
+        {% endfor %}
+        <div class="row g-3 mb-3">
+            <div class="col-md-4">
+                <label class="form-label" for="{{ form.name.id_for_label }}">{% translate "Name" %}</label>
+                {{ form.name }}
+                {% for error in form.name.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+            </div>
+            <div class="col-md-8">
+                <label class="form-label" for="{{ form.url.id_for_label }}">{% translate "Webhook URL" %}</label>
+                {{ form.url }}
+                <div class="form-text">{{ form.url.help_text }}</div>
+                {% for error in form.url.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+            </div>
+            <div class="col-md-4">
+                <label class="form-label" for="{{ form.ping_type.id_for_label }}">{% translate "Ping" %}</label>
+                {{ form.ping_type }}
+                {% for error in form.ping_type.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+            </div>
+            <div class="col-md-8">
+                <label class="form-label" for="{{ form.ping_groups.id_for_label }}">{% translate "Ping groups" %}</label>
+                {{ form.ping_groups }}
+                <div class="form-text">{{ form.ping_groups.help_text }} {% translate "Ctrl-click to pick several." %}</div>
+                {% for error in form.ping_groups.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+            </div>
+            <div class="col-12">
+                <label class="form-label" for="{{ form.notes.id_for_label }}">{% translate "Notes" %}</label>
+                {{ form.notes }}
+            </div>
+            <div class="col-12">
+                <div class="form-check form-switch">
+                    {{ form.is_enabled }}
+                    <label class="form-check-label" for="{{ form.is_enabled.id_for_label }}">{% translate "Enabled" %}</label>
+                </div>
+            </div>
+        </div>
+        <button class="btn btn-primary">{% if editing %}{% translate "Save" %}{% else %}{% translate "Add" %}{% endif %}</button>
+        {% if editing %}
+            <a class="btn btn-link" href="{% url 'holdfast:webhooks' %}">{% translate "Cancel" %}</a>
+        {% endif %}
+    </form>
+{% endblock %}

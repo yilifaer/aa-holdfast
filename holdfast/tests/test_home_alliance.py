@@ -399,7 +399,7 @@ class DenGroundTests(TestCase):
             skyhook_id=7_000_230, owner=self.landlord, planet_id=40_000_230
         )
         self.slot = DenSlot.objects.create(skyhook=skyhook)
-        self.member = user_with("member", "den_basic")
+        self.member = user_with("member", "basic_access")
         ours = corporation(98000231, "Ours", HOME)
         character = character_for(self.member, 93000230, ours, HOME)
         operator = DenCharacter.objects.create(
@@ -604,7 +604,7 @@ class RegistrationGuardTests(TestCase):
 
     def setUp(self):
         self.refresh = stub_corporation_refresh(self)
-        self.manager = user_with("manager", "manage_owners", "den_basic")
+        self.manager = user_with("manager", "manage_owners", "basic_access")
         self.home_corp = corporation(98000240, "Home Corp", HOME)
         self.main = character_for(self.manager, 94000001, self.home_corp, HOME)
 
@@ -835,7 +835,7 @@ class CharlinkRegistrationTests(TestCase):
     def setUp(self):
         stub_corporation_refresh(self)
         set_home(HOME)
-        self.manager = user_with("manager", "manage_owners", "den_basic")
+        self.manager = user_with("manager", "manage_owners", "basic_access")
         self.home_corp = corporation(98000260, "Home Corp", HOME)
         self.main = character_for(self.manager, 94000201, self.home_corp, HOME)
 
@@ -875,7 +875,7 @@ class CharlinkRegistrationTests(TestCase):
         self.assertTrue(any("disabled" in text for _level, text in notes))
 
     def test_without_manage_owners_no_corporation_is_touched(self):
-        operator = user_with("operator", "den_basic")
+        operator = user_with("operator", "basic_access")
         character = character_for(operator, 94000203, self.home_corp, HOME)
         notes, owner_queued = self._add(operator, character)
         self.assertEqual(notes, [])

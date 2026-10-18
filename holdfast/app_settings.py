@@ -88,6 +88,10 @@ HOLDFAST_DEN_NOTIFICATION_TYPES = [
 # but it must not swallow an attack happening right now either -- which is
 # exactly when a new operator is most likely to be registering. Anything newer
 # than this on a first sync is treated as live.
+# How long a den character whose sync found nothing is left alone before it is
+# listed again. See DenCharacter.idle_until.
+HOLDFAST_DEN_IDLE_HOURS = _setting("HOLDFAST_DEN_IDLE_HOURS", 6)
+
 HOLDFAST_DEN_FIRST_SYNC_GRACE_MINUTES = _setting(
     "HOLDFAST_DEN_FIRST_SYNC_GRACE_MINUTES", 90
 )

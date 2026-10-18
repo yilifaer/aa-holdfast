@@ -3,10 +3,10 @@
 Permissions come in two independent flavours, and it is worth being explicit
 about which is which:
 
-* **Tier** -- how much of a section you may open. ``*_basic`` is the
-  member-facing page, ``*_officer`` is every page in that section, and
-  ``*_manage`` adds the settings form. Higher tiers imply lower ones, so a
-  manager never needs the officer permission granted alongside.
+* **Tier** -- how much of a section you may open. ``basic_access`` is the
+  member-facing page of every section, ``*_officer`` is every page in that
+  section, and ``*_manage`` adds the settings form. Higher tiers imply lower
+  ones, so a manager never needs the officer permission granted alongside.
 * **Scope** -- whose data you see. An officer sees their own alliance's
   registered corporations. That matters for an install shared by several
   alliances, which is the normal case once this is public rather than running
@@ -40,7 +40,7 @@ def sov_can_manage(user) -> bool:
 
 
 def sov_can_enter(user) -> bool:
-    return _any_perm(user, "sov_basic", "sov_officer", "sov_manage")
+    return _any_perm(user, "basic_access", "sov_officer", "sov_manage")
 
 
 def skyhook_can_view_all(user) -> bool:
@@ -52,7 +52,7 @@ def skyhook_can_manage(user) -> bool:
 
 
 def skyhook_can_enter(user) -> bool:
-    return _any_perm(user, "skyhook_basic", "skyhook_officer", "skyhook_manage")
+    return _any_perm(user, "basic_access", "skyhook_officer", "skyhook_manage")
 
 
 def den_can_view_all(user) -> bool:
@@ -74,7 +74,7 @@ def den_can_claim(user) -> bool:
 
 
 def den_can_enter(user) -> bool:
-    return _any_perm(user, "den_basic", "den_member", "den_officer", "den_manage")
+    return _any_perm(user, "basic_access", "den_member", "den_officer", "den_manage")
 
 
 def require_any(*codenames):

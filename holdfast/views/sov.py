@@ -31,7 +31,7 @@ from .common import (
     visible_skyhooks,
 )
 
-SOV_ANY = ("sov_basic", "sov_officer", "sov_manage")
+SOV_ANY = ("basic_access", "sov_officer", "sov_manage")
 SOV_FULL = ("sov_officer", "sov_manage")
 SOV_ADMIN = ("sov_manage",)
 

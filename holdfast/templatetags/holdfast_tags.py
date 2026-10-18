@@ -3,7 +3,19 @@ from django.utils import timezone
 from django.utils.timesince import timesince, timeuntil
 from django.utils.translation import gettext_lazy as _
 
+from .. import __version__
+
 register = template.Library()
+
+
+@register.simple_tag
+def holdfast_version():
+    """The installed version, for the header of every page.
+
+    The people running the alliance's Auth are not its Django admins, and
+    "which version is this" had no answer they could find themselves.
+    """
+    return __version__
 
 
 @register.filter

@@ -46,7 +46,7 @@ from .common import (
     visible_slots,
 )
 
-DEN_ANY = ("den_basic", "den_member", "den_officer", "den_manage")
+DEN_ANY = ("basic_access", "den_member", "den_officer", "den_manage")
 DEN_LIST = ("den_member", "den_officer", "den_manage")
 DEN_FULL = ("den_officer", "den_manage")
 DEN_ADMIN = ("den_manage",)
@@ -148,14 +148,20 @@ def dashboard(request):
 
     # Both live states count. "Started" is not finished -- it is an operation
     # already running against a clock, which is if anything more urgent than
-    # one nobody has picked up yet.
-    for operation in MercenaryTacticalOperation.objects.filter(
-        den_character__in=own_den_characters(request.user),
-        state__in=(
-            MercenaryTacticalOperation.State.AVAILABLE,
-            MercenaryTacticalOperation.State.STARTED,
-        ),
-    ).select_related("den__eve_planet", "den__eve_solar_system"):
+    # one nobody has picked up yet. The same bar and the same Ignore as the
+    # badge, so the number on the menu and the rows here always agree.
+    for operation in (
+        MercenaryTacticalOperation.objects.filter(
+            den_character__in=own_den_characters(request.user),
+            state__in=(
+                MercenaryTacticalOperation.State.AVAILABLE,
+                MercenaryTacticalOperation.State.STARTED,
+            ),
+            dismissed_at__isnull=True,
+        )
+        .on_dens_at(HoldfastConfig.get_solo().mto_anarchy_threshold)
+        .select_related("den__eve_planet", "den__eve_solar_system")
+    ):
         if operation.expires and operation.expires < now:
             continue
         soon = operation.expires and operation.expires < now + timedelta(hours=24)
@@ -171,6 +177,8 @@ def dashboard(request):
                 "system": operation.den.system_name if operation.den else None,
                 "detail": operation.type_name
                 + (" -- started, not finished" if started else " -- not started yet"),
+                # The feed renders an Ignore button for any item carrying one.
+                "operation_id": operation.operation_id,
             }
         )
 
@@ -573,6 +581,36 @@ def dismiss_claim(request, claim_pk):
     return redirect("holdfast:den_information")
 
 
+@require_any(*DEN_LIST)
+@require_POST
+def dismiss_operation(request, operation_id):
+    """Take one tactical operation off your own dashboard and badge.
+
+    A member who has looked at an operation and decided not to run it should
+    not be nagged about it until it expires. Nothing else changes: the row
+    stays for the timers page, and the Discord channel was told once already.
+    Gated like the dashboard, where the button is and where this redirects:
+    basic access alone neither sees the list nor has the badge count it.
+    """
+    # Scoped to the requester's own characters, not looked up by id: an
+    # operation id is a string anyone can read off a channel ping.
+    operation = get_object_or_404(
+        MercenaryTacticalOperation.objects.filter(
+            den_character__in=own_den_characters(request.user)
+        ),
+        operation_id=operation_id,
+    )
+    operation.dismissed_at = timezone.now()
+    operation.save(update_fields=["dismissed_at"])
+    invalidate_badges(request.user)
+    messages.success(
+        request,
+        f"Ignoring {operation.type_name} at "
+        f"{operation.den.planet_name if operation.den else 'an unknown den'}.",
+    )
+    return redirect("holdfast:den_dashboard")
+
+
 @require_any(*DEN_ADMIN)
 @require_POST
 def decide_claim(request, claim_pk, decision):
@@ -742,6 +780,16 @@ def settings_save(request):
             setattr(config, name, value)
         except ValueError:
             errors.append(f"{name}: '{raw}' is not valid")
+
+    # Anarchy runs 0..4; anything else is a typo, not a policy.
+    raw = request.POST.get("mto_anarchy_threshold", "").strip()
+    try:
+        threshold = int(raw)
+        if not 0 <= threshold <= 4:
+            raise ValueError
+        config.mto_anarchy_threshold = threshold
+    except ValueError:
+        errors.append(f"mto_anarchy_threshold: '{raw}' is not an anarchy level from 0 to 4")
 
     for name in BOOL_FIELDS:
         setattr(config, name, request.POST.get(name) == "on")

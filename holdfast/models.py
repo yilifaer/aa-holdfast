@@ -70,12 +70,15 @@ class General(models.Model):  # noqa: DJ008 -- never instantiated, see below
         managed = False
         default_permissions = ()
         permissions = (
+            # The bottom rung of all three ladders at once. It used to be one
+            # per section, and in practice they were handed out together or
+            # not at all -- and "basic_access" is the name every other Auth
+            # app uses, which is where an admin looks first.
+            ("basic_access", "Can access Holdfast: system cost, raid targets, own dens and timers"),
             # --- Sovereignty ---
-            ("sov_basic", "SOV: can see the system cost page"),
             ("sov_officer", "SOV: can see every sovereignty page"),
             ("sov_manage", "SOV: can change sovereignty settings"),
             # --- Skyhooks ---
-            ("skyhook_basic", "Skyhook: can see the raid target page"),
             ("skyhook_officer", "Skyhook: can see every skyhook page"),
             ("skyhook_manage", "Skyhook: can change skyhook settings"),
             # --- Mercenary dens ---
@@ -83,8 +86,7 @@ class General(models.Model):  # noqa: DJ008 -- never instantiated, see below
             # group needs exactly one of these. Applying for a slot belongs to
             # the user rung: as a permission of its own, every group that could
             # reach the claim button had to be handed it separately.
-            ("den_basic", "Den member: can see their own dens and timers"),
-            ("den_member", "Den user: member, plus the den list and applying for a den slot"),
+            ("den_member", "Den user: basic access, plus the den list and applying for a den slot"),
             ("den_officer", "Den officer: user, plus every den page"),
             ("den_manage", "Den manager: officer, plus approving claims and den settings"),
             # --- Cross-cutting ---
@@ -754,6 +756,17 @@ class HoldfastConfig(models.Model):
     )
 
     # --- dens ---
+    # The reward of an operation scales with the den's anarchy, so one on a
+    # fresh den is nothing anybody will run: counting it on the badge and
+    # pinging it to Discord was noise. Where the bar sits is the alliance's
+    # call, which is why it is a setting and not a constant.
+    mto_anarchy_threshold = models.PositiveSmallIntegerField(
+        default=2,
+        help_text=(
+            "Tactical operations count, and are announced, only on dens at "
+            "this anarchy level or above; 0 means every operation."
+        ),
+    )
     notify_den_skyhook_impact = models.BooleanField(
         default=True,
         help_text="Warn when a den starts siphoning one of our skyhooks.",
@@ -862,6 +875,13 @@ class DenCharacter(models.Model):
     last_sync_at = models.DateTimeField(null=True, blank=True)
     last_sync_ok = models.BooleanField(default=False)
     last_error = models.TextField(blank=True)
+    # Set when a sync found nothing at all -- no dens, no operations, no
+    # notifications -- so the scheduled fan-out leaves this character alone
+    # until then. charlink ticks our entry for every character by default, and
+    # most characters will never anchor a den; three ESI calls every twenty
+    # minutes for each of them would be the bulk of this app's traffic for
+    # nothing. Registering or claiming syncs straight away regardless.
+    idle_until = models.DateTimeField(null=True, blank=True, db_index=True)
 
     class Meta:
         ordering = ["character_ownership__character__character_name"]
@@ -1263,6 +1283,20 @@ class MercenaryDen(models.Model):
         return self.detail_updated_at is not None
 
 
+class OperationQuerySet(models.QuerySet):
+    def on_dens_at(self, threshold):
+        """Operations on dens at this anarchy level or above; 0 keeps every one.
+
+        Spelled out as a list of levels rather than derived per row, so the
+        badge count stays a single query. At zero nothing is filtered at all,
+        which also keeps an operation whose den has not been pulled yet.
+        """
+        if threshold <= 0:
+            return self
+        levels = [level for level, number in LEVEL_NUMBERS.items() if number >= threshold]
+        return self.filter(den__anarchy_level__in=levels)
+
+
 class MercenaryTacticalOperation(models.Model):
     """An MTO offered at one of our dens.
 
@@ -1297,6 +1331,13 @@ class MercenaryTacticalOperation(models.Model):
     )
     expires = models.DateTimeField(null=True, blank=True, db_index=True)
     updated_at = models.DateTimeField(default=timezone.now)
+
+    # The operator has decided not to run this one. It leaves their own
+    # dashboard and badge and nothing else: the channel was told when it
+    # appeared, and the timers page is a record, not a to-do list.
+    dismissed_at = models.DateTimeField(null=True, blank=True)
+
+    objects = OperationQuerySet.as_manager()
 
     class Meta:
         ordering = ["expires"]

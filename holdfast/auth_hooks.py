@@ -18,8 +18,9 @@ from .core import attention
 from .views.common import den_can_enter, skyhook_can_enter, sov_can_enter
 
 
-def _section_pages(prefix, *extra):
-    """Every page in one section, for highlighting its sidebar entry.
+def _section_pages(*prefixes):
+    """Every page whose URL name starts with one of the prefixes, for
+    highlighting a sidebar entry.
 
     Auth matches ``navactive`` against exact URL names, or a whole namespace --
     never a prefix, which silently matches nothing. The namespace form is out
@@ -29,11 +30,7 @@ def _section_pages(prefix, *extra):
     so that happened on every page.
     """
     names = [p.name for p in urls.urlpatterns if getattr(p, "name", None)]
-    return [
-        f"holdfast:{name}"
-        for name in names + list(extra)
-        if name.startswith(prefix) or name in extra
-    ]
+    return [f"holdfast:{name}" for name in names if name.startswith(prefixes)]
 
 
 class _HoldfastMenu(MenuItemHook):
@@ -66,9 +63,10 @@ class SovMenu(_HoldfastMenu):
             _("SOV Monitor"),
             "fas fa-flag fa-fw",
             "holdfast:sov_home",
-            # The Tokens page belongs to no section, and its title already
-            # says SOV Monitor -- so that is the entry it keeps lit.
-            navactive=_section_pages("sov_", "owners", "owner_toggle"),
+            # The Tokens and Webhooks pages belong to no section, and their
+            # title already says SOV Monitor -- so that is the entry they
+            # keep lit.
+            navactive=_section_pages("sov_", "owner", "webhook"),
         )
 
 

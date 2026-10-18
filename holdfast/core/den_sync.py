@@ -26,6 +26,7 @@ from eveuniverse.models import EvePlanet
 from ..app_settings import (
     HOLDFAST_DEN_DETAIL_CALLS_PER_RUN,
     HOLDFAST_DEN_FIRST_SYNC_GRACE_MINUTES,
+    HOLDFAST_DEN_IDLE_HOURS,
     HOLDFAST_DEN_NOTIFICATION_MAX_AGE_HOURS,
     HOLDFAST_DEN_NOTIFICATION_TYPES,
 )
@@ -449,6 +450,27 @@ def update_den_character(den_character: DenCharacter) -> dict:
         "operations": operations,
         "new_events": events,
     }
+
+
+def note_idle(den_character: DenCharacter, stats: dict) -> None:
+    """Back off a character whose sync found nothing; wake one that has
+    something again.
+
+    "Nothing" is no dens, no operations and no new notifications. A den that
+    comes down leaves the character idle too, which is right: there is
+    nothing left to watch. Anchoring a new den is noticed within
+    HOLDFAST_DEN_IDLE_HOURS at the latest, or at once if the operator
+    registers or claims through the app, both of which sync directly.
+    """
+    found = (stats.get("dens") or 0) + (stats.get("operations") or 0) + (
+        stats.get("new_events") or 0
+    )
+    idle_until = (
+        None if found else timezone.now() + timedelta(hours=HOLDFAST_DEN_IDLE_HOURS)
+    )
+    if den_character.idle_until != idle_until:
+        den_character.idle_until = idle_until
+        den_character.save(update_fields=["idle_until"])
 
 
 # --------------------------------------------------------------------------

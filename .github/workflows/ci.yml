@@ -12,6 +12,12 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
+        # Every Alliance Auth line we promise to run on: 5.2 and 5.4 pinned
+        # with the django-esi 9.10 they shipped alongside, and "latest" --
+        # whatever pip resolves today, which is how a new install gets it.
+        # django-esi is pinned with the older two because AA 5.5 moved to its
+        # 10.x line, and the ESI client API is where upgrades bite.
+        alliance-auth: ["5.2", "5.4", "latest"]
 
     services:
       redis:
@@ -32,8 +38,13 @@ jobs:
       - name: Install
         run: |
           python -m pip install --upgrade pip
+          case "${{ matrix.alliance-auth }}" in
+            5.2) pip install "allianceauth~=5.2.0" "django-esi~=9.10.0" ;;
+            5.4) pip install "allianceauth~=5.4.0" "django-esi~=9.10.0" ;;
+          esac
           pip install -e .
           pip install ruff build twine
+          python -c "import allianceauth, esi; print('allianceauth', allianceauth.__version__, '| django-esi', esi.__version__)"
 
       - name: Lint
         run: ruff check holdfast tests

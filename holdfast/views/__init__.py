@@ -1,3 +1,4 @@
-"""View modules, one per section plus the shared token registration page."""
+"""View modules, one per section plus the install-wide pages: token
+registration and webhooks."""
 
-from . import den, owners, skyhook, sov  # noqa: F401
+from . import den, owners, skyhook, sov, webhooks  # noqa: F401

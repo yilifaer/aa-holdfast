@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .views import den, owners, skyhook, sov
+from .views import den, owners, skyhook, sov, webhooks
 
 app_name = "holdfast"
 
@@ -44,9 +44,20 @@ urlpatterns = [
         name="den_decide_claim",
     ),
     path("den/contact/", den.save_contact, name="den_save_contact"),
+    path(
+        "den/mto/<str:operation_id>/dismiss/",
+        den.dismiss_operation,
+        name="den_mto_dismiss",
+    ),
     # --- Token registration, shared ---
     path("owners/", owners.index, name="owners"),
     path("owners/add/", owners.add_owner, name="add_owner"),
     path("owners/<int:pk>/toggle/", owners.toggle_owner, name="owner_toggle"),
     path("owners/add-den-character/", owners.add_den_character, name="add_den_character"),
+    # --- Discord webhooks, shared ---
+    path("webhooks/", webhooks.index, name="webhooks"),
+    path("webhooks/add/", webhooks.add, name="webhook_add"),
+    path("webhooks/<int:pk>/edit/", webhooks.edit, name="webhook_edit"),
+    path("webhooks/<int:pk>/delete/", webhooks.delete, name="webhook_delete"),
+    path("webhooks/<int:pk>/test/", webhooks.send_test, name="webhook_test"),
 ]

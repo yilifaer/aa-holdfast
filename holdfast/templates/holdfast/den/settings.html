@@ -15,6 +15,19 @@
             </div>
         </div>
 
+        <div class="holdfast-section-title">{% translate "Tactical operations" %}</div>
+        <div class="row g-3 mb-4">
+            <div class="col-md-4">
+                <label class="form-label">{% translate "Count operations on dens at anarchy level" %}</label>
+                <div class="input-group">
+                    <input type="number" min="0" max="4" step="1" name="mto_anarchy_threshold" class="form-control"
+                           value="{{ config.mto_anarchy_threshold }}">
+                    <span class="input-group-text">{% translate "or above" %}</span>
+                </div>
+                <div class="form-text">{% translate "Below it an operation is neither on the dashboard and badge nor announced to Discord. 0 means every operation." %}</div>
+            </div>
+        </div>
+
         <div class="holdfast-section-title">{% translate "Siphon detection" %}</div>
         <div class="alert alert-secondary py-2 holdfast-sub">
             {% blocktranslate %}Two detectors run side by side. One reads the workforce figure itself &mdash; an un-round number means a den is taking a cut, which needs no history and catches dens that were already there. The other watches for a skyhook falling below its own historic peak, which catches new ones. The settings below tune the second.{% endblocktranslate %}

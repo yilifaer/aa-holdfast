@@ -11,6 +11,7 @@ import random
 from datetime import timedelta
 
 from celery import shared_task
+from django.db.models import Q
 from django.utils import timezone
 from esi.models import Token
 
@@ -138,10 +139,20 @@ def prune_alert_log():
 
 @shared_task
 def update_all_den_characters():
-    """Refresh every registered den operator, spread over a few minutes."""
-    characters = list(DenCharacter.objects.filter(is_enabled=True))
+    """Refresh every registered den operator, spread over a few minutes.
+
+    Characters whose last sync found nothing are left alone until their
+    idle_until passes; see DenCharacter.idle_until.
+    """
+    now = timezone.now()
+    characters = list(
+        DenCharacter.objects.filter(is_enabled=True).filter(
+            Q(idle_until__isnull=True) | Q(idle_until__lte=now)
+        )
+    )
+    idle = DenCharacter.objects.filter(is_enabled=True, idle_until__gt=now).count()
     if not characters:
-        logger.info("No den characters registered")
+        logger.info("No den characters due (%s idle)", idle)
         return 0
     jitter = max(HOLDFAST_OWNER_SYNC_JITTER_SECONDS, 0)
     for den_character in characters:
@@ -180,6 +191,7 @@ def update_den_character(den_character_pk):
         raise
 
     den_character.mark_sync(True)
+    den_sync.note_idle(den_character, stats)
     logger.info("%s: %s", den_character, stats)
     return stats
 
