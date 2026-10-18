@@ -98,6 +98,18 @@ class FanOutTests(TestCase):
 
 
 class CharlinkDefaultTests(SimpleTestCase):
+    def test_the_stored_default_is_flipped_only_where_charlink_exists(self):
+        """charlink keeps the tick in its own table and reads our flag once,
+        so 0013 flips the stored row. Without charlink -- these settings, and
+        any install that never added it -- it must do nothing and raise
+        nothing."""
+        import importlib
+
+        migration = importlib.import_module("holdfast.migrations.0013_charlink_ticked_by_default")
+        # No charlink here, so it must return before it ever looks at the
+        # schema editor -- which is why None is a fair stand-in for it.
+        migration.tick_by_default(None, None)
+
     def test_the_entry_is_ticked_by_default(self):
         """A member who links everything in one go links this too. Read as
         text: charlink is optional and absent in CI."""

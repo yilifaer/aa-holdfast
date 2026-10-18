@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses
 [semantic versioning](https://semver.org/).
 
-## [0.1.10] - unreleased
+## [0.1.10] - 2026-10-18
 
 ### Added
 
@@ -12,7 +12,10 @@ All notable changes to this project are documented here. The format follows
   everything in one go links this too. What keeps that affordable is new as
   well: a den character whose sync finds nothing -- no dens, no operations, no
   notifications -- is not listed again for `HOLDFAST_DEN_IDLE_HOURS` (default
-  6). Registering or claiming through the app still syncs at once.
+  6). Registering or claiming through the app still syncs at once. charlink
+  stores each entry's default the first time it sees it, so the upgrade flips
+  the stored one too; turn it back off in charlink's admin if you prefer, and
+  it will stay off.
 
 - **A Webhooks page.** Discord webhooks could only be made in Django admin,
   which the people running the alliance's alerts do not have. The page sits
