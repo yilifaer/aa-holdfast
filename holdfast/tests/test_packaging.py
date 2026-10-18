@@ -37,10 +37,18 @@ VIA_ALLIANCEAUTH = {
 # installed. An install without charlink never reaches the import.
 OPTIONAL = {"charlink"}
 
+# Declared to hold a version, not to be imported. Alliance Auth 5.2 leaves
+# django-sri open, and django-sri 1.0 drops the sri_static tag that AA's own
+# base template loads -- every page fails, with or without this app. AA pins
+# <1 from 5.4; this carries the pin back to 5.2. Anything listed here must be
+# an upper bound in pyproject, or it is a stray dependency with an excuse.
+PINNED_FOR_ALLIANCEAUTH = {"django-sri"}
+
 # Distribution name -> the module it provides, where they differ.
 PROVIDES = {
     "django-esi": "esi",
     "django-eveuniverse": "eveuniverse",
+    "django-sri": "sri",
     "dhooks-lite": "dhooks_lite",
     "allianceauth-app-utils": "app_utils",
     "pyyaml": "yaml",
@@ -106,8 +114,18 @@ class DependencyDeclarationTests(SimpleTestCase):
     def test_nothing_is_declared_that_is_never_imported(self):
         """A dependency nobody imports is one more thing for an installer to
         resolve, and one more version pin to go stale."""
-        declared, _ = self._declared_modules()
+        declared, raw = self._declared_modules()
         imported = set(self._imported_modules())
+        pinned = {PROVIDES.get(name, name.replace("-", "_")) for name in PINNED_FOR_ALLIANCEAUTH}
         # allianceauth is imported as `allianceauth`, so it appears in both.
-        unused = declared - imported
+        unused = declared - imported - pinned
         self.assertEqual(unused, set(), "declared but never imported")
+
+    def test_a_pin_carried_for_auth_is_an_upper_bound(self):
+        """The allowlist above excuses a version constraint, not a dependency.
+        A bare name there would be the stray this file exists to catch."""
+        _declared, raw = self._declared_modules()
+        for name in PINNED_FOR_ALLIANCEAUTH:
+            matching = [r for r in raw if r.lower().startswith(name)]
+            self.assertEqual(len(matching), 1, f"{name} declared once")
+            self.assertIn("<", matching[0], f"{name} must carry an upper bound")
