@@ -122,17 +122,23 @@ def check_den_attacks() -> int:
         )
         # The operator hears about their own den through Auth's bell too, so
         # it is waiting for them next login even if they missed the channel.
-        notify_user(
-            event.den_character.user,
-            title=f"Your mercenary den is under attack: {where}",
-            message=(
-                f"A den at {where} was being shot at "
-                f"{event.timestamp:%Y-%m-%d %H:%M} EVE. It was not reinforced "
-                "at the time, so there may still be a window to save it."
-            ),
-            level="danger",
-        )
-        invalidate_badges(event.den_character.user)
+        # Once per event, whatever became of the Discord post: the event stays
+        # pending until Discord takes it, and ringing on every retry rang the
+        # bell every ten minutes for as long as Discord was off or unreachable.
+        bell = f"bell:denattack:{event.notification_id}"
+        if not _already_sent(bell):
+            notify_user(
+                event.den_character.user,
+                title=f"Your mercenary den is under attack: {where}",
+                message=(
+                    f"A den at {where} was being shot at "
+                    f"{event.timestamp:%Y-%m-%d %H:%M} EVE. It was not reinforced "
+                    "at the time, so there may still be a window to save it."
+                ),
+                level="danger",
+            )
+            _mark_sent(bell)
+            invalidate_badges(event.den_character.user)
 
         if not delivered:
             continue
@@ -156,8 +162,10 @@ def check_den_reinforced() -> int:
         "eve_planet", "eve_solar_system", "den_character"
     ):
         key = f"denreinf:{den.den_id}"
+        bell = f"bell:denreinf:{den.den_id}"
         if den.state != MercenaryDen.State.PAUSED:
             _disarm(key)
+            _disarm(bell)
             continue
         if _already_sent(key):
             continue
@@ -181,20 +189,24 @@ def check_den_reinforced() -> int:
             ),
             category=AlertCategory.DEN_REINFORCED,
         )
-        notify_user(
-            den.den_character.user,
-            title=f"Your mercenary den is reinforced: {den.planet_name}",
-            message=(
-                f"{den.planet_name} in {den.system_name} is reinforced."
-                + (
-                    f" It comes out at {den.reinforce_end:%Y-%m-%d %H:%M} EVE."
-                    if den.reinforce_end
-                    else ""
-                )
-            ),
-            level="danger",
-        )
-        invalidate_badges(den.den_character.user)
+        # Once per reinforcement, as for attacks; it re-arms when the den
+        # comes out.
+        if not _already_sent(bell):
+            notify_user(
+                den.den_character.user,
+                title=f"Your mercenary den is reinforced: {den.planet_name}",
+                message=(
+                    f"{den.planet_name} in {den.system_name} is reinforced."
+                    + (
+                        f" It comes out at {den.reinforce_end:%Y-%m-%d %H:%M} EVE."
+                        if den.reinforce_end
+                        else ""
+                    )
+                ),
+                level="danger",
+            )
+            _mark_sent(bell)
+            invalidate_badges(den.den_character.user)
 
         if not delivered:
             continue

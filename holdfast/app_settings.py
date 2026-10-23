@@ -15,17 +15,11 @@ HOLDFAST_ESI_COMPATIBILITY_DATE = _setting(
     "HOLDFAST_ESI_COMPATIBILITY_DATE", ESI_COMPATIBILITY_DATE
 )
 
-# How long before a skyhook's theft window opens we warn, in minutes.
-HOLDFAST_SKYHOOK_THEFT_LEAD_MINUTES = _setting("HOLDFAST_SKYHOOK_THEFT_LEAD_MINUTES", 45)
-
 # Fallback bar for skyhook theft alerts, used only for reagents that have no
 # row in the ReagentThreshold table. Per-reagent bars are set by admins in
 # Django admin (Holdfast -> Reagent alert thresholds); a row is created
 # automatically the first time each reagent is seen on a skyhook.
 HOLDFAST_SKYHOOK_MIN_UNSECURED = _setting("HOLDFAST_SKYHOOK_MIN_UNSECURED", 100)
-
-# Warn when a tracked system's ADM drops below this. None disables the check.
-HOLDFAST_ADM_ALERT_THRESHOLD = _setting("HOLDFAST_ADM_ALERT_THRESHOLD", 3.0)
 
 # Extra alliance IDs to keep sovereignty/ADM records for, on top of the tracked
 # alliance chosen on the SOV settings page. Corporations in these alliances may
@@ -54,7 +48,8 @@ HOLDFAST_OWNER_SYNC_JITTER_SECONDS = _setting("HOLDFAST_OWNER_SYNC_JITTER_SECOND
 # own budget instead of blocking a listing sync.
 HOLDFAST_PLANET_RESOLVE_PER_RUN = _setting("HOLDFAST_PLANET_RESOLVE_PER_RUN", 60)
 
-# Rows older than this many days with no sighting get pruned.
+# Alert log rows older than this many days are pruned. That also re-arms an
+# alert whose condition still holds, so it repeats about this often.
 HOLDFAST_STALE_PRUNE_DAYS = _setting("HOLDFAST_STALE_PRUNE_DAYS", 14)
 
 # Scopes a corporation owner token must carry.

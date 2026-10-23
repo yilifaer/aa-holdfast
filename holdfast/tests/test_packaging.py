@@ -121,6 +121,13 @@ class DependencyDeclarationTests(SimpleTestCase):
         unused = declared - imported - pinned
         self.assertEqual(unused, set(), "declared but never imported")
 
+    def test_the_suite_is_not_shipped(self):
+        """An installed copy has no settings to run it with; it only adds
+        weight and a test that reads a pyproject.toml that is not there."""
+        with open(PACKAGE_ROOT.parent / "pyproject.toml", "rb") as handle:
+            find = tomllib.load(handle)["tool"]["setuptools"]["packages"]["find"]
+        self.assertIn("holdfast.tests*", find.get("exclude", []))
+
     def test_a_pin_carried_for_auth_is_an_upper_bound(self):
         """The allowlist above excuses a version constraint, not a dependency.
         A bare name there would be the stray this file exists to catch."""

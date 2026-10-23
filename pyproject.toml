@@ -16,7 +16,7 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Web Environment",
     "Framework :: Django",
-    "Framework :: Django :: 4.2",
+    "Framework :: Django :: 5.2",
     "Intended Audience :: End Users/Desktop",
     "Natural Language :: English",
     "Operating System :: POSIX :: Linux",
@@ -35,7 +35,7 @@ dependencies = [
     # to 5.2 so a fresh install there does not break on a dependency of ours.
     "django-sri<1",
     "django-esi>=9.10",          # compatibility-date support
-    "django-eveuniverse>=1.5",
+    "django-eveuniverse>=2.0",   # 0001 depends on its migration 0012
     "dhooks-lite>=1.1",
     # Notification bodies are YAML, anchors and all. Alliance Auth happens to
     # require this too, but depending on somebody else's dependency is how an
@@ -51,6 +51,9 @@ Issues = "https://github.com/yilifaer/aa-holdfast/issues"
 
 [tool.setuptools.packages.find]
 include = ["holdfast*"]
+# The suite runs from a checkout (runtests.py); an installed copy has no
+# settings for it and nothing to test against.
+exclude = ["holdfast.tests*"]
 
 [tool.setuptools.dynamic]
 version = { attr = "holdfast.__version__" }

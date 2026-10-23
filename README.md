@@ -25,7 +25,9 @@ pip install aa-holdfast
 Add to the **end** of `myauth/settings/local.py`:
 
 ```python
-INSTALLED_APPS += ["eveuniverse", "holdfast"]
+if "eveuniverse" not in INSTALLED_APPS:
+    INSTALLED_APPS += ["eveuniverse"]
+INSTALLED_APPS += ["holdfast"]
 
 from holdfast.schedule import CELERYBEAT_SCHEDULE as HOLDFAST_SCHEDULE
 CELERYBEAT_SCHEDULE.update(HOLDFAST_SCHEDULE)
@@ -43,9 +45,10 @@ That is the whole install. The version running shows beside the page title on
 every Holdfast page, so nobody needs Django admin to answer "which one is
 this". Three things worth knowing:
 
-- **`eveuniverse` must be in `INSTALLED_APPS`.** This app has foreign keys into
-  its models. Leave it out and Auth will not start. Adding it twice is harmless
-  — several other apps add it too.
+- **`eveuniverse` must be in `INSTALLED_APPS`, exactly once.** This app has
+  foreign keys into its models, so leaving it out stops Auth from starting --
+  and so does listing it twice: Django refuses duplicate apps. aa-structures
+  and several other apps add it too, hence the check above.
 - **No `eveuniverse` preload.** Types, systems and planets are fetched as they
   are first seen.
 - **11 scheduled tasks** come from `holdfast.schedule`. Merging the dict beats
@@ -56,7 +59,7 @@ this". Three things worth knowing:
 
 Requires Alliance Auth 5.2+ (CI runs 5.2, 5.4 and the latest release), django-esi
 9.10+ (for compatibility dates),
-django-eveuniverse, dhooks-lite, PyYAML.
+django-eveuniverse 2.0+, dhooks-lite, PyYAML.
 
 ## Setup
 

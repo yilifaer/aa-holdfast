@@ -4,15 +4,42 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses
 [semantic versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.1.11] - unreleased
+
+Fixes from running the AA app checklist
+(https://github.com/fthomas-de/aa-app-checklist) against 0.1.10.
 
 ### Fixed
 
+- **The README's install block stopped Auth from starting on most installs.**
+  It added `eveuniverse` to `INSTALLED_APPS` and called adding it twice
+  harmless; Django refuses duplicate apps, and aa-structures and others add it
+  already. The block now adds it only when it is missing.
+- **A Discord webhook that refused a post counted as delivered.** dhooks-lite
+  raises only for network trouble, so a deleted webhook's 404 or a 429 came
+  back as an answer, the alert was recorded as sent and never retried, and
+  *Send test* reported success. Any non-2xx answer is now a failed delivery,
+  retried on the next run, and the log names the status -- not the URL, which
+  is the webhook's password. `holdfast_test_webhook` says when nothing was
+  delivered instead of always printing "Sent."
+- **A den attack or reinforcement rang the owner's Auth bell every ten
+  minutes** while its Discord post was failing -- den alerts switched off,
+  unrouted, or no webhook at all. The bell rings once per attack and once per
+  reinforcement, whatever becomes of Discord.
 - **Alliance Auth 5.2 on Python 3.11+ installs a django-sri that breaks Auth's
   own templates.** AA 5.2 leaves django-sri unpinned and 1.0 (September 2026)
   drops the `sri_static` tag its base template loads; AA pins `<1` from 5.4.
   This app now pins `django-sri<1` too, so an AA 5.2 install picking it up does
   not end up with every page failing. CI's 5.2 line installs the pin as well.
+
+### Changed
+
+- The test suite is no longer shipped in the wheel.
+- `django-eveuniverse>=2.0`, the version whose migration 0001 depends on; the
+  old `>=1.5` floor could not install. The Django classifier says 5.2.
+- Two settings that nothing read are gone: `HOLDFAST_SKYHOOK_THEFT_LEAD_MINUTES`
+  and `HOLDFAST_ADM_ALERT_THRESHOLD`. Both moved to the settings pages long ago;
+  leaving them in `local.py` is harmless.
 
 ## [0.1.10] - 2026-10-18
 

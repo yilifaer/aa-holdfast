@@ -181,13 +181,26 @@ def post_to(hook, embed: Embed) -> bool:
     the Webhooks page -- so the test proves the path a real alert takes.
     """
     try:
-        DiscordWebhook(hook.url).execute(
+        response = DiscordWebhook(hook.url).execute(
             content=_content(hook), embeds=[embed], username="SOV Monitor"
         )
-        return True
-    except Exception:  # noqa: BLE001 - one broken hook must not stop the rest
-        logger.exception("Failed to post to webhook %s", hook.name)
+    except Exception as exc:  # noqa: BLE001 - one broken hook must not stop the rest
+        # The exception's own text carries the request URL, and a webhook URL
+        # is its own password; name the error, not the address.
+        logger.error("Failed to post to webhook %s: %s", hook.name, type(exc).__name__)
         return False
+    # dhooks-lite raises only for network trouble; a 404 from a deleted
+    # webhook, a 401 or a 429 comes back as a response. Counting those as
+    # delivered lost the alert for good -- it was recorded as sent -- and made
+    # the Send test button report success for a dead channel.
+    if not getattr(response, "status_ok", True):
+        logger.warning(
+            "Webhook %s refused the post: HTTP %s",
+            hook.name,
+            getattr(response, "status_code", "?"),
+        )
+        return False
+    return True
 
 
 def _send(embed: Embed, category=None) -> bool:

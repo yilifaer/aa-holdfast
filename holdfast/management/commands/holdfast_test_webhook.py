@@ -10,12 +10,20 @@ class Command(BaseCommand):
     help = "Send a test message to every enabled webhook."
 
     def handle(self, *args, **options):
-        _send(
+        delivered = _send(
             _embed(
-                title="SOV Monitor test",
+                title="Holdfast test",
                 description="If you can read this, alerts will reach this channel.",
                 color=COLOR_INFO,
                 fields=[Field(name="Status", value="working", inline=True)],
             )
         )
-        self.stdout.write(self.style.SUCCESS("Sent."))
+        if delivered:
+            self.stdout.write(self.style.SUCCESS("Sent."))
+        else:
+            self.stderr.write(
+                self.style.ERROR(
+                    "Not delivered: no enabled webhook, or Discord refused every "
+                    "post. The log says which."
+                )
+            )
