@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses
 [semantic versioning](https://semver.org/).
 
-## [0.1.11] - unreleased
+## [0.1.11] - 2026-10-23
 
 Fixes from running the AA app checklist
 (https://github.com/fthomas-de/aa-app-checklist) against 0.1.10.
