@@ -1,5 +1,7 @@
 from django.contrib import admin
 
+from .core.alerts import pin_routes_of
+from .forms import WebhookUrlForm
 from .models import (
     AlertLog,
     AlertRoute,
@@ -84,8 +86,23 @@ class SovSystemAdmin(admin.ModelAdmin):
 
 @admin.register(Webhook)
 class WebhookAdmin(admin.ModelAdmin):
-    list_display = ("name", "is_enabled", "ping_type", "pings")
+    # The Webhooks page's URL rules: Discord's endpoint only, and a saved URL
+    # never shown in full. Admin was the one way left to save any URL at all.
+    form = WebhookUrlForm
+    list_display = ("name", "is_enabled", "disabled_reason", "ping_type", "pings")
     filter_horizontal = ("ping_groups",)
+    readonly_fields = ("disabled_reason", "disabled_at")
+
+    # A delete here takes the routes' ticks with it, as on the Webhooks page;
+    # the categories it was routed to must stay routed, not fall back.
+    def delete_model(self, request, obj):
+        pin_routes_of(obj)
+        super().delete_model(request, obj)
+
+    def delete_queryset(self, request, queryset):
+        for hook in queryset:
+            pin_routes_of(hook)
+        super().delete_queryset(request, queryset)
 
     @admin.display(description="Pings groups")
     def pings(self, hook):
@@ -123,10 +140,19 @@ class DenCharacterAdmin(admin.ModelAdmin):
     readonly_fields = ("last_sync_at", "last_sync_ok", "last_error")
 
 
+# A claim is decided on the den admin page, which tells the applicant and
+# rejects everyone else queued on the site. A status edited here would do
+# neither, so it is shown, not edited.
+DECIDED_ON_DEN_PAGE = (
+    "Status is read-only here: approve, reject or revoke a claim on the Den "
+    "admin page, which notifies the member and settles the rest of the queue."
+)
+
+
 class DenClaimInline(admin.TabularInline):
     model = DenClaim
     extra = 0
-    readonly_fields = ("created_at",)
+    readonly_fields = ("status", "created_at")
 
 
 @admin.register(DenSlot)
@@ -150,6 +176,12 @@ class DenClaimAdmin(admin.ModelAdmin):
     list_display = ("slot", "character", "user", "status", "created_at", "decided_at")
     list_filter = ("status",)
     search_fields = ("character__character_name", "user__username")
+    readonly_fields = ("status",)
+
+    def get_fieldsets(self, request, obj=None):
+        fieldsets = super().get_fieldsets(request, obj)
+        name, options = fieldsets[0]
+        return [(name, {**options, "description": DECIDED_ON_DEN_PAGE}), *fieldsets[1:]]
 
 
 @admin.register(MercenaryDen)
@@ -183,14 +215,24 @@ class AlertRouteAdmin(admin.ModelAdmin):
     """Managers normally do this from the section settings pages; this is here
     for the initial setup and for anyone who prefers the admin."""
 
-    list_display = ("category", "is_enabled", "channel_list")
-    list_filter = ("is_enabled",)
+    list_display = ("category", "is_enabled", "is_routed", "channel_list")
+    list_filter = ("is_enabled", "is_routed")
     filter_horizontal = ("webhooks",)
 
     @admin.display(description="channels")
     def channel_list(self, obj):
         names = ", ".join(w.name for w in obj.webhooks.all())
-        return names or "(every enabled webhook)"
+        if names:
+            return names
+        return "(nowhere: its webhooks were deleted)" if obj.is_routed else "(every enabled webhook)"
+
+    def save_related(self, request, form, formsets, change):
+        # Ticking a channel here routes the category, as on the settings page.
+        super().save_related(request, form, formsets, change)
+        route = form.instance
+        if route.webhooks.exists() and not route.is_routed:
+            route.is_routed = True
+            route.save(update_fields=["is_routed"])
 
 
 @admin.register(SovCampaign)

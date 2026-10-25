@@ -163,17 +163,20 @@ class ScheduleTests(TestCase):
 
     def test_the_schedule_covers_every_task_the_app_defines(self):
         """A task nobody schedules is a feature nobody gets."""
+        from celery import Task
+
         from .. import tasks
         from ..schedule import CELERYBEAT_SCHEDULE
 
         scheduled = {
             entry["task"].rpartition(".")[2] for entry in CELERYBEAT_SCHEDULE.values()
         }
+        # Instances only: the QueueOnce class imported into the module has a
+        # delay() too, and is no task of ours.
         defined = {
             name
             for name in dir(tasks)
-            if not name.startswith("_")
-            and hasattr(getattr(tasks, name), "delay")  # a Celery task
+            if not name.startswith("_") and isinstance(getattr(tasks, name), Task)
         }
         self.assertEqual(
             defined - scheduled - self.DISPATCHED_NOT_SCHEDULED,

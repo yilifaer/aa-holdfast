@@ -2,9 +2,11 @@
 Per-category Discord routing. Included by each section's settings page, which
 passes only its own categories.
 {% endcomment %}
-{% load i18n %}
+{% load i18n holdfast_tags %}
 
 <div class="holdfast-section-title">{% translate "Discord channels" %}</div>
+
+{% include "holdfast/partials/_stranded.html" with stranded=routes|stranded %}
 
 {% if not webhooks %}
     <div class="alert alert-warning py-2 holdfast-sub">
@@ -13,8 +15,10 @@ passes only its own categories.
     </div>
 {% else %}
     <div class="alert alert-secondary py-2 holdfast-sub">
-        {% blocktranslate %}Pick which channel each kind of alert goes to. Tick nothing and it goes to every enabled webhook, so an upgrade never leaves you silently unalerted.{% endblocktranslate %}
+        {% blocktranslate %}Pick which channel each kind of alert goes to. One nobody has routed goes to every enabled webhook, so an upgrade never leaves you silently unalerted. Once channels are ticked it goes only there: if they are all deleted or switched off, it goes nowhere rather than to every channel, and this page says so. Untick them all to send it to every enabled webhook again.{% endblocktranslate %}
     </div>
+    {# Without this the save leaves routing alone: the table was not on the page. #}
+    <input type="hidden" name="routing_shown" value="1">
     <div class="table-responsive mb-4">
         <table class="table table-sm align-middle">
             <thead>
@@ -27,7 +31,12 @@ passes only its own categories.
             <tbody>
                 {% for route in routes %}
                     <tr>
-                        <td>{{ route.get_category_display }}</td>
+                        <td>
+                            {{ route.get_category_display }}
+                            {% if route.is_stranded %}
+                                <span class="badge text-bg-danger">{% translate "goes nowhere" %}</span>
+                            {% endif %}
+                        </td>
                         <td>
                             <div class="form-check form-switch">
                                 <input class="form-check-input" type="checkbox"
@@ -48,6 +57,17 @@ passes only its own categories.
                                     </label>
                                 </div>
                             {% endfor %}
+                            {% if route.is_stranded and not route.webhooks.all %}
+                                {# Its webhooks were deleted, so nothing shows ticked; leaving it so must not mean "everyone". #}
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="checkbox"
+                                           id="ra-{{ route.category }}"
+                                           name="route_all_{{ route.category }}">
+                                    <label class="form-check-label holdfast-sub" for="ra-{{ route.category }}">
+                                        {% translate "every enabled webhook instead" %}
+                                    </label>
+                                </div>
+                            {% endif %}
                         </td>
                     </tr>
                 {% endfor %}

@@ -5,8 +5,10 @@
 
 {% block holdfast_content %}
     <div class="alert alert-secondary">
-        {% blocktranslate %}The Discord channels alerts can be posted to. Which alert goes to which channel is chosen on each section's settings page; a category with nothing ticked there goes to every enabled webhook. The URL is a credential, which is why only section managers see this page.{% endblocktranslate %}
+        {% blocktranslate %}The Discord channels alerts can be posted to. Which alert goes to which channel is chosen on each section's settings page; a category nobody has routed there goes to every enabled webhook. A webhook Discord says was deleted, or whose token it rejects, is switched off here with the reason. The URL is a credential, which is why only section managers see this page, and why it is never shown in full once saved.{% endblocktranslate %}
     </div>
+
+    {% include "holdfast/partials/_stranded.html" %}
 
     {% if not webhooks %}
         <div class="alert alert-info">{% translate "No webhooks yet. Add one below, then route alerts to it on each section's settings page." %}</div>
@@ -16,6 +18,7 @@
                 <thead>
                     <tr>
                         <th>{% translate "Name" %}</th>
+                        <th>{% translate "URL" %}</th>
                         <th>{% translate "Enabled" %}</th>
                         <th>{% translate "Ping" %}</th>
                         <th>{% translate "Groups" %}</th>
@@ -27,11 +30,18 @@
                     {% for webhook in webhooks %}
                         <tr>
                             <td>{{ webhook.name }}</td>
+                            {# Masked: the URL is the channel's password. #}
+                            <td class="small text-nowrap"><code>{{ webhook.masked_url }}</code></td>
                             <td>
                                 {% if webhook.is_enabled %}
                                     <span class="badge text-bg-success">{% translate "yes" %}</span>
                                 {% else %}
                                     <span class="badge text-bg-secondary">{% translate "no" %}</span>
+                                    {% if webhook.disabled_reason %}
+                                        <div class="small text-danger">
+                                            {{ webhook.disabled_reason }}{% if webhook.disabled_at %} ({{ webhook.disabled_at|date:"Y-m-d H:i" }} EVE){% endif %}
+                                        </div>
+                                    {% endif %}
                                 {% endif %}
                             </td>
                             <td class="small">{{ webhook.get_ping_type_display }}</td>
@@ -44,7 +54,7 @@
                                     <button class="btn btn-sm btn-outline-secondary"><i class="fab fa-discord"></i> {% translate "Send test" %}</button>
                                 </form>
                                 <form method="post" action="{% url 'holdfast:webhook_delete' webhook.pk %}" class="d-inline"
-                                      onsubmit="return confirm('{% translate "Delete this webhook? Alerts routed only to it fall back to every enabled webhook." %}');">
+                                      onsubmit="return confirm('{% translate "Delete this webhook? Alerts routed only to it will go nowhere until they are routed again." %}');">
                                     {% csrf_token %}
                                     <button class="btn btn-sm btn-outline-danger">{% translate "Delete" %}</button>
                                 </form>

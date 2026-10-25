@@ -406,3 +406,40 @@ class VersionTagTests(SimpleTestCase):
                 source = _read("templates", "holdfast", *parts)
                 self.assertIn("{% load holdfast_tags %}", source)
                 self.assertRegex(source, r"\{% block header_nav_brand %\}.*\{% holdfast_version %\}")
+
+
+class LoggingTests(SimpleTestCase):
+    """Every module logs through Auth's extension logger.
+
+    Auth routes the ``extensions`` logger to its own extensions.log, which is
+    where an admin looks for an app's messages; a plain ``getLogger`` lands in
+    whatever the root logger does, usually nowhere useful.
+    """
+
+    def _modules(self):
+        for path in sorted(ROOT.rglob("*.py")):
+            relative = path.relative_to(ROOT)
+            if relative.parts[0] == "tests":
+                continue
+            yield path, ".".join(("holdfast", *relative.with_suffix("").parts))
+
+    def test_nothing_calls_get_logger_directly(self):
+        for path, name in self._modules():
+            with self.subTest(module=name):
+                self.assertNotIn("logging.getLogger(", path.read_text(encoding="utf-8"))
+
+    def test_every_logger_is_a_child_of_extensions(self):
+        import importlib
+        import logging
+
+        found = 0
+        for path, name in self._modules():
+            if "\nlogger = " not in path.read_text(encoding="utf-8"):
+                continue
+            found += 1
+            with self.subTest(module=name):
+                logger = importlib.import_module(name).logger
+                self.assertIs(logger, logging.getLogger(f"extensions.{name}"))
+                # Auth renames it back, so the log line names the module.
+                self.assertEqual(logger.name, name)
+        self.assertGreater(found, 10)

@@ -128,6 +128,15 @@ class DependencyDeclarationTests(SimpleTestCase):
             find = tomllib.load(handle)["tool"]["setuptools"]["packages"]["find"]
         self.assertIn("holdfast.tests*", find.get("exclude", []))
 
+    def test_auth_and_django_esi_stop_at_the_next_major(self):
+        """Without a ceiling, pip on an older Auth could pull a new major of
+        either in underneath every other app on the install."""
+        _declared, raw = self._declared_modules()
+        for name, ceiling in (("allianceauth", "<6"), ("django-esi", "<11")):
+            matching = [r for r in raw if r.lower().split(">")[0] == name]
+            self.assertEqual(len(matching), 1, f"{name} declared once")
+            self.assertIn(ceiling, matching[0])
+
     def test_a_pin_carried_for_auth_is_an_upper_bound(self):
         """The allowlist above excuses a version constraint, not a dependency.
         A bare name there would be the stray this file exists to catch."""

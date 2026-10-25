@@ -16,12 +16,11 @@ frozen and the code it would import is not: the next rename of that helper
 must not break ``migrate`` on every fresh install.
 """
 
-import logging
-
+from allianceauth.services.hooks import get_extension_logger
 from django.conf import settings
 from django.db import migrations
 
-logger = logging.getLogger(__name__)
+logger = get_extension_logger(__name__)
 
 
 def _extra_alliance_ids():

@@ -11,7 +11,8 @@ from datetime import timedelta
 from allianceauth.authentication.models import CharacterOwnership
 from allianceauth.eveonline.models import EveCharacter
 from django.contrib import messages
-from django.db.models import Q
+from django.contrib.auth.models import User
+from django.db.models import Exists, OuterRef, Prefetch, Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
@@ -32,14 +33,17 @@ from ..models import (
     Skyhook,
     Webhook,
 )
+from ..tasks import enqueue
 from ..tasks import update_den_character as update_den_character_task
 from .common import (
     den_can_claim,
     den_can_manage,
     den_can_see_list,
     den_can_view_all,
+    den_entrant_ids,
     own_den_characters,
     own_dens,
+    report_test_results,
     require_any,
     routes_for_section,
     save_routes,
@@ -278,7 +282,9 @@ def information(request):
             dens=dens,
             characters=characters,
             claims=claims,
-            operator=DenOperator.for_user(request.user),
+            # Read, not created: the row is made when they first save it.
+            operator=DenOperator.objects.filter(user=request.user).first()
+            or DenOperator(user=request.user),
             timezones=TIMEZONE_CHOICES,
         ),
     )
@@ -291,17 +297,26 @@ def timers(request):
     characters = own_den_characters(request.user)
     scope_all = den_can_view_all(request.user) and request.GET.get("scope") == "all"
 
-    dens = MercenaryDen.objects.select_related(
+    # Everyone's means everyone's on the ground this officer sees, as on every
+    # other officer page -- not every den on the install. Their own stay in
+    # wherever they are.
+    mine = Q(den_character__in=characters)
+    if scope_all:
+        ground = visible_slots(request.user).values("pk")
+        dens_filter = mine | Q(slot__in=ground)
+        related_filter = mine | Q(den__slot__in=ground)
+    else:
+        dens_filter = related_filter = mine
+
+    dens = MercenaryDen.objects.filter(dens_filter).select_related(
         "eve_planet", "eve_solar_system", "den_character"
     )
-    events = DenEvent.objects.select_related("den__eve_planet", "den_character")
-    operations = MercenaryTacticalOperation.objects.select_related(
+    events = DenEvent.objects.filter(related_filter).select_related(
+        "den__eve_planet", "den_character"
+    )
+    operations = MercenaryTacticalOperation.objects.filter(related_filter).select_related(
         "den__eve_planet", "den__eve_solar_system", "den_character"
     )
-    if not scope_all:
-        dens = dens.filter(den_character__in=characters)
-        events = events.filter(den_character__in=characters)
-        operations = operations.filter(den_character__in=characters)
 
     entries = []
     for den in dens.filter(reinforce_end__gte=now):
@@ -398,33 +413,7 @@ def admin_page(request):
         slot__in=slots, status=DenClaim.Status.PENDING
     ).select_related("slot__skyhook__eve_planet", "character", "user")
 
-    # Contact card: everything Alliance Auth already knows, plus the timezone
-    # the operator set themselves.
-    # Grouped by person, not by character: four alts belonging to one member
-    # are one contact card, not four identical ones.
-    operators = []
-    seen_users = {}
-    for den_character in DenCharacter.objects.select_related(
-        "character_ownership__character", "character_ownership__user"
-    ):
-        user = den_character.user
-        entry = seen_users.get(user.pk)
-        if entry is None:
-            operator = DenOperator.for_user(user)
-            entry = {
-                "username": user.username,
-                "main": getattr(user.profile, "main_character", None),
-                "discord": den_character.discord_name,
-                "timezone": operator.get_timezone_display() if operator.timezone else "",
-                "local_time": operator.local_time,
-                "note": operator.contact_note,
-                "characters": [],
-                "dens": [],
-            }
-            seen_users[user.pk] = entry
-            operators.append(entry)
-        entry["characters"].append(den_character.character.character_name)
-        entry["dens"].extend(den_character.dens.all())
+    operators = _operator_directory([slot.pk for slot in slots])
 
     siphoned = [
         skyhook
@@ -432,7 +421,7 @@ def admin_page(request):
             Q(workforce_siphon_percent__isnull=False)
             | Q(workforce_dropped_at__isnull=False),
             den_slot__in=slots,
-        ).select_related("eve_planet", "eve_solar_system", "den_slot")
+        ).select_related("eve_planet", "eve_solar_system", "den_slot", "owner")
         if skyhook.is_siphon_suspected
     ]
 
@@ -463,6 +452,83 @@ def admin_page(request):
             sov_impacted=sov_impacted,
         ),
     )
+
+
+def _operator_directory(slot_ids):
+    """Contact cards for the people behind the dens and claims on these slots.
+
+    Not every registered character: charlink registers every one a member
+    links, and listing them all made this a map of every member's alts. Only
+    a character running a den here, or holding a pending or approved claim
+    here, is listed -- the ground the officer already sees, so another
+    alliance's operators stay out of it too. Someone who has lost den access
+    drops out as well (see ``tasks.den_characters_in_use``).
+
+    Grouped by person, not by character: four alts belonging to one member are
+    one contact card, not four identical ones. Each card is everything Auth
+    already knows plus the timezone the operator set themselves, read in a
+    fixed number of queries however many there are, and without creating a
+    contact row for anyone who never filled one in.
+    """
+    dens_here = MercenaryDen.objects.filter(slot__in=slot_ids).select_related(
+        "eve_planet"
+    )
+    live_claims = DenClaim.objects.filter(
+        slot__in=slot_ids,
+        status__in=(DenClaim.Status.PENDING, DenClaim.Status.APPROVED),
+        # The claim's maker, not whoever holds the character now.
+        user=OuterRef("character_ownership__user"),
+        character=OuterRef("character_ownership__character"),
+    )
+    related = [
+        "character_ownership__character",
+        "character_ownership__user__profile__main_character",
+    ]
+    # Auth's Discord service is optional; where it runs, the handle comes
+    # with the same query.
+    if hasattr(User, "discord"):
+        related.append("character_ownership__user__discord")
+    den_characters = list(
+        DenCharacter.objects.filter(
+            Exists(dens_here.filter(den_character=OuterRef("pk"))) | Exists(live_claims)
+        )
+        .select_related(*related)
+        .prefetch_related(Prefetch("dens", queryset=dens_here, to_attr="dens_here"))
+    )
+
+    user_ids = {den_character.character_ownership.user_id for den_character in den_characters}
+    still_here = den_entrant_ids(user_ids)
+    contacts = {
+        operator.user_id: operator
+        for operator in DenOperator.objects.filter(user_id__in=still_here)
+    }
+
+    operators = []
+    seen_users = {}
+    for den_character in den_characters:
+        user = den_character.user
+        if user.pk not in still_here:
+            continue
+        entry = seen_users.get(user.pk)
+        if entry is None:
+            contact = contacts.get(user.pk)
+            entry = {
+                "username": user.username,
+                "main": user.profile.main_character,
+                "discord": den_character.discord_name,
+                "timezone": contact.get_timezone_display()
+                if contact and contact.timezone
+                else "",
+                "local_time": contact.local_time if contact else None,
+                "note": contact.contact_note if contact else "",
+                "characters": [],
+                "dens": [],
+            }
+            seen_users[user.pk] = entry
+            operators.append(entry)
+        entry["characters"].append(den_character.character.character_name)
+        entry["dens"].extend(den_character.dens_here)
+    return operators
 
 
 # --------------------------------------------------------------------------
@@ -515,14 +581,15 @@ def claim_slot(request, token, slot_pk):
     den_character, created = DenCharacter.objects.get_or_create(
         character_ownership=ownership, defaults={"is_enabled": True}
     )
-    if created:
-        update_den_character_task.delay(den_character.pk)
-
+    # The claim first: it is what the member asked for, and queueing the
+    # first sync is the one step here that can fail on something else.
     DenClaim.objects.create(slot=slot, user=request.user, character=character)
+    queued = not created or enqueue(update_den_character_task, den_character.pk)
     messages.success(
         request,
         f"Claim submitted for {slot.planet_name} as {character}. "
-        "A den manager will review it.",
+        "A den manager will review it."
+        + ("" if queued else f" {character}'s dens appear after the next scheduled sync."),
     )
     return redirect("holdfast:den_list")
 
@@ -558,7 +625,7 @@ def withdraw_claim(request, claim_pk):
     claim.status = DenClaim.Status.WITHDRAWN
     claim.decided_at = timezone.now()
     claim.save(update_fields=["status", "decided_at"])
-    messages.success(request, f"Withdrew your claim on {claim.slot.planet_name}.")
+    messages.success(request, f"Withdrew your claim on {claim.planet_name}.")
     return redirect("holdfast:den_information")
 
 
@@ -577,7 +644,7 @@ def dismiss_claim(request, claim_pk):
         return redirect("holdfast:den_information")
     claim.dismissed_at = timezone.now()
     claim.save(update_fields=["dismissed_at"])
-    messages.success(request, f"Cleared your claim on {claim.slot.planet_name}.")
+    messages.success(request, f"Cleared your claim on {claim.planet_name}.")
     return redirect("holdfast:den_information")
 
 
@@ -634,7 +701,7 @@ def decide_claim(request, claim_pk, decision):
         claim.status = DenClaim.Status.REVOKED
         messages.success(
             request,
-            f"Revoked {claim.character}'s claim on {claim.slot.planet_name}. "
+            f"Revoked {claim.character}'s claim on {claim.planet_name}. "
             "The slot is free again once the den comes down.",
         )
     elif decision == "approve":
@@ -653,12 +720,12 @@ def decide_claim(request, claim_pk, decision):
         )
         messages.success(
             request,
-            f"Approved {claim.character} for {claim.slot.planet_name}"
+            f"Approved {claim.character} for {claim.planet_name}"
             + (f", rejected {rejected} other applicant(s)." if rejected else "."),
         )
     else:
         claim.status = DenClaim.Status.REJECTED
-        messages.success(request, f"Rejected the claim on {claim.slot.planet_name}.")
+        messages.success(request, f"Rejected the claim on {claim.planet_name}.")
 
     claim.decided_at = now
     claim.decided_by = request.user
@@ -669,15 +736,15 @@ def decide_claim(request, claim_pk, decision):
     # channel ping -- a rejection is nobody else's business.
     approved = claim.status == DenClaim.Status.APPROVED
     revoked = claim.status == DenClaim.Status.REVOKED
-    where = f"{claim.slot.planet_name} in {claim.slot.system_name}"
+    where = f"{claim.planet_name} in {claim.system_name}"
     notify_user(
         claim.user,
         title=(
-            f"Den site revoked: {claim.slot.planet_name}"
+            f"Den site revoked: {claim.planet_name}"
             if revoked
-            else f"Den site approved: {claim.slot.planet_name}"
+            else f"Den site approved: {claim.planet_name}"
             if approved
-            else f"Den site declined: {claim.slot.planet_name}"
+            else f"Den site declined: {claim.planet_name}"
         ),
         message=(
             (
@@ -827,16 +894,5 @@ def settings_test(request):
     """
     from ..core.alerts import send_test_for_section
 
-    results = send_test_for_section("den")
-    delivered = [name for name, ok in results.items() if ok]
-    skipped = [name for name, ok in results.items() if not ok]
-    if delivered:
-        messages.success(
-            request, f"Sent {len(delivered)} test alert(s): {', '.join(delivered)}"
-        )
-    if skipped:
-        messages.warning(
-            request,
-            f"Not sent (no channel, or switched off): {', '.join(skipped)}",
-        )
+    report_test_results(request, send_test_for_section("den"))
     return redirect("holdfast:den_settings")

@@ -10,9 +10,9 @@ same description, same fields -- and filled from real rows in the database
 wherever there are any. Only the footer says it was a test.
 """
 
-import logging
 from datetime import timedelta
 
+from allianceauth.services.hooks import get_extension_logger
 from dhooks_lite import Field
 from django.utils import timezone
 
@@ -26,9 +26,9 @@ from ..models import (
     SovHub,
     SovSystem,
 )
-from .alerts import COLOR_DANGER, COLOR_INFO, COLOR_WARNING, _embed, _send
+from .alerts import COLOR_DANGER, COLOR_INFO, COLOR_WARNING, Delivery, _dispatch, _embed
 
-logger = logging.getLogger(__name__)
+logger = get_extension_logger(__name__)
 
 TEST_FOOTER = "TEST, no action needed"
 
@@ -413,15 +413,16 @@ BUILDERS = {
 }
 
 
-def send_sample(category) -> bool:
-    """Post a realistic sample of one category down its configured route."""
+def send_sample(category) -> Delivery:
+    """Post a realistic sample of one category down its configured route,
+    and say how each channel answered."""
     builder = BUILDERS.get(category)
     if builder is None:
         logger.warning("No sample builder for %s", category)
-        return False
+        return Delivery(problem="no sample exists for this category")
     try:
         embed = builder()
     except Exception:  # noqa: BLE001 - a broken sample must not break the page
         logger.exception("Could not build a sample for %s", category)
-        return False
-    return _send(embed, category=category)
+        return Delivery(problem="the sample could not be built; the log says why")
+    return _dispatch(embed, category=category)

@@ -1,6 +1,7 @@
 """Data model: sovereignty hubs, skyhooks, the public sov map, and dens."""
 
 from datetime import timedelta
+from urllib.parse import urlsplit
 
 from allianceauth.authentication.models import CharacterOwnership
 from allianceauth.eveonline.models import EveCharacter, EveCorporationInfo
@@ -64,6 +65,11 @@ class General(models.Model):  # noqa: DJ008 -- never instantiated, see below
     Alliance Auth's convention for declaring an app's permissions: an unmanaged
     model with no fields, whose Meta carries the permission list. Nothing is
     ever instantiated, so it has no ``__str__`` to write.
+
+    These nine are the app's only permissions. Every other model sets
+    ``default_permissions = ()``: no page checks Django's add/change/delete/
+    view, and their 84 rows buried these nine in the group permission picker.
+    Django admin is for superusers, who need none of them.
     """
 
     class Meta:
@@ -90,7 +96,9 @@ class General(models.Model):  # noqa: DJ008 -- never instantiated, see below
             ("den_officer", "Den officer: user, plus every den page"),
             ("den_manage", "Den manager: officer, plus approving claims and den settings"),
             # --- Cross-cutting ---
-            ("manage_owners", "Can register corporation and character tokens"),
+            # Corporation tokens only: a den character is registered by its
+            # own player under basic_access.
+            ("manage_owners", "Can register and switch corporation tokens"),
         )
 
 
@@ -136,6 +144,7 @@ class Owner(models.Model):
     objects = OwnerQuerySet.as_manager()
 
     class Meta:
+        default_permissions = ()
         ordering = ["corporation__corporation_name"]
 
     def __str__(self) -> str:
@@ -226,6 +235,7 @@ class SovHub(models.Model):
     detail_updated_at = models.DateTimeField(null=True, blank=True, db_index=True)
 
     class Meta:
+        default_permissions = ()
         ordering = ["fuel_expires_at"]
         verbose_name = "sovereignty hub"
 
@@ -299,6 +309,7 @@ class SovHubReagent(models.Model):
     burning_per_hour = models.BigIntegerField(default=0)
 
     class Meta:
+        default_permissions = ()
         constraints = [
             models.UniqueConstraint(
                 fields=["hub", "type_id"], name="holdfast_hub_reagent_unique"
@@ -335,6 +346,7 @@ class SovHubUpgrade(models.Model):
     )
 
     class Meta:
+        default_permissions = ()
         constraints = [
             models.UniqueConstraint(
                 fields=["hub", "type_id"], name="holdfast_hub_upgrade_unique"
@@ -401,6 +413,7 @@ class Skyhook(models.Model):
     detail_updated_at = models.DateTimeField(null=True, blank=True, db_index=True)
 
     class Meta:
+        default_permissions = ()
         ordering = ["theft_start"]
 
     def __str__(self) -> str:
@@ -521,6 +534,7 @@ class SkyhookReagent(models.Model):
     last_cycle = models.DateTimeField(null=True, blank=True)
 
     class Meta:
+        default_permissions = ()
         constraints = [
             models.UniqueConstraint(
                 fields=["skyhook", "type_id"], name="holdfast_skyhook_reagent_unique"
@@ -537,7 +551,7 @@ class SkyhookReagent(models.Model):
 
 
 class ReagentThreshold(models.Model):
-    """Per-reagent bar for skyhook theft alerts, editable in Django admin.
+    """Per-reagent bar for skyhook theft alerts, set on the Skyhook settings page.
 
     Reagents are not worth the same trip: a hauler will cross the region for
     Magmatic Gas and shrug at the same number of units of something cheap. So
@@ -561,6 +575,7 @@ class ReagentThreshold(models.Model):
     )
 
     class Meta:
+        default_permissions = ()
         ordering = ["eve_type__name", "type_id"]
         verbose_name = "reagent alert threshold"
 
@@ -606,6 +621,7 @@ class SovSystem(models.Model):
     updated_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
+        default_permissions = ()
         ordering = ["activity_defense_multiplier"]
         verbose_name = "sovereignty system"
 
@@ -617,6 +633,22 @@ class SovSystem(models.Model):
         if self.eve_solar_system:
             return self.eve_solar_system.name
         return str(self.solar_system_id)
+
+
+def mask_webhook_url(url: str) -> str:
+    """``https://discord.com/api/webhooks/1234…/…abcd``: enough to tell two
+    webhooks apart, not enough to post with. The id's first four digits and
+    the token's last four, the token's only when it is long enough that four
+    characters give nothing away. A URL that is not a Discord webhook -- one
+    saved through admin before admin checked -- shows its host alone."""
+    parts = urlsplit((url or "").strip())
+    origin = f"{parts.scheme or 'https'}://{parts.hostname or '?'}"
+    segments = parts.path.split("/")
+    if parts.path.startswith("/api/webhooks/") and len(segments) >= 5:
+        webhook_id, token = segments[3], segments[4]
+        tail = token[-4:] if len(token) >= 16 else ""
+        return f"{origin}/api/webhooks/{webhook_id[:4]}…/…{tail}"
+    return f"{origin}/…"
 
 
 class Webhook(models.Model):
@@ -647,9 +679,38 @@ class Webhook(models.Model):
         ),
     )
     notes = models.TextField(blank=True)
+    # Filled when Discord says the webhook is gone (404) or its token is no
+    # good (401). Neither answer changes by asking again, so the webhook is
+    # switched off rather than retried every run, and the page says why.
+    disabled_reason = models.CharField(
+        max_length=200,
+        blank=True,
+        default="",
+        help_text="Why Holdfast switched this webhook off. Cleared when it is enabled again.",
+    )
+    disabled_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        default_permissions = ()
 
     def __str__(self) -> str:
         return self.name
+
+    def save(self, *args, **kwargs):
+        # A reason only means something while the webhook is off. Whoever
+        # switches it back on -- this app's form or Django admin -- has dealt
+        # with it, or is about to find out again.
+        if self.is_enabled:
+            self.disabled_reason = ""
+            self.disabled_at = None
+        super().save(*args, **kwargs)
+
+    @property
+    def masked_url(self) -> str:
+        """The URL as pages may show it. It is the webhook's password --
+        whoever has it can post to the channel -- and every section manager
+        manages every webhook, so none of them is shown another's in full."""
+        return mask_webhook_url(self.url)
 
 
 class AlertLog(models.Model):
@@ -657,6 +718,9 @@ class AlertLog(models.Model):
 
     key = models.CharField(max_length=255, unique=True)
     sent_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        default_permissions = ()
 
     def __str__(self) -> str:
         return self.key
@@ -781,6 +845,7 @@ class HoldfastConfig(models.Model):
     )
 
     class Meta:
+        default_permissions = ()
         verbose_name = "configuration"
         verbose_name_plural = "configuration"
 
@@ -882,8 +947,15 @@ class DenCharacter(models.Model):
     # minutes for each of them would be the bulk of this app's traffic for
     # nothing. Registering or claiming syncs straight away regardless.
     idle_until = models.DateTimeField(null=True, blank=True, db_index=True)
+    # When this character's notification list was first read. It is what
+    # tells an operator's first sync from a later one; whether any DenEvent
+    # is left cannot, since they go after HOLDFAST_DEN_EVENT_RETENTION_DAYS
+    # and a quiet operator then looked new again -- so the first attack read
+    # after an outage was filed as backfill, with no post and no bell.
+    notifications_synced_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
+        default_permissions = ()
         ordering = ["character_ownership__character__character_name"]
         verbose_name = "den character"
 
@@ -996,6 +1068,7 @@ class DenSlot(models.Model):
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
+        default_permissions = ()
         ordering = ["skyhook__eve_planet__name"]
         verbose_name = "den slot"
 
@@ -1136,7 +1209,17 @@ class DenClaim(models.Model):
         # granted: a revoked claim usually means a den has to come down.
         REVOKED = "revoked", "Revoked"
 
-    slot = models.ForeignKey(DenSlot, on_delete=models.CASCADE, related_name="claims")
+    # A slot goes when its skyhook drops out of a listing. The claim stays as
+    # the record of who was granted which ground, named by the snapshot below.
+    slot = models.ForeignKey(
+        DenSlot,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="claims",
+    )
+    slot_planet_name = models.CharField(max_length=100, blank=True, default="")
+    slot_system_name = models.CharField(max_length=100, blank=True, default="")
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -1167,11 +1250,30 @@ class DenClaim(models.Model):
     dismissed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
+        default_permissions = ()
         ordering = ["-created_at"]
         verbose_name = "den claim"
 
     def __str__(self) -> str:
-        return f"{self.character} -> {self.slot.planet_name} ({self.status})"
+        return f"{self.character} -> {self.planet_name} ({self.status})"
+
+    def save(self, *args, **kwargs):
+        if self.slot_id is not None and not self.slot_planet_name:
+            self.slot_planet_name = self.slot.planet_name[:100]
+            self.slot_system_name = self.slot.system_name[:100]
+        super().save(*args, **kwargs)
+
+    @property
+    def planet_name(self) -> str:
+        if self.slot is not None:
+            return self.slot.planet_name
+        return self.slot_planet_name or "a slot that no longer exists"
+
+    @property
+    def system_name(self) -> str:
+        if self.slot is not None:
+            return self.slot.system_name
+        return self.slot_system_name or "?"
 
     @property
     def is_open(self) -> bool:
@@ -1237,6 +1339,7 @@ class MercenaryDen(models.Model):
     detail_updated_at = models.DateTimeField(null=True, blank=True, db_index=True)
 
     class Meta:
+        default_permissions = ()
         ordering = ["eve_planet__name"]
         verbose_name = "mercenary den"
 
@@ -1340,6 +1443,7 @@ class MercenaryTacticalOperation(models.Model):
     objects = OperationQuerySet.as_manager()
 
     class Meta:
+        default_permissions = ()
         ordering = ["expires"]
         verbose_name = "mercenary tactical operation"
 
@@ -1395,6 +1499,7 @@ class DenEvent(models.Model):
     is_alerted = models.BooleanField(default=False, db_index=True)
 
     class Meta:
+        default_permissions = ()
         ordering = ["-timestamp"]
         verbose_name = "den event"
 
@@ -1435,6 +1540,7 @@ class SystemCostIndex(models.Model):
     updated_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
+        default_permissions = ()
         ordering = ["manufacturing"]
         verbose_name = "system cost index"
         verbose_name_plural = "system cost indices"
@@ -1498,6 +1604,7 @@ class SovCampaign(models.Model):
     updated_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
+        default_permissions = ()
         ordering = ["start_time"]
         verbose_name = "sovereignty campaign"
 
@@ -1554,9 +1661,15 @@ CATEGORY_SECTIONS = {
 class AlertRoute(models.Model):
     """Where one category of alert goes.
 
-    A category with no webhooks selected falls back to every enabled webhook,
-    so an existing install keeps working after an upgrade instead of going
-    quiet -- silence is the one failure mode nobody notices.
+    A category nobody has routed falls back to every enabled webhook, so a
+    fresh install, and a category an upgrade adds, alerts somewhere instead of
+    going quiet -- silence is the one failure mode nobody notices.
+
+    Once somebody ticks a channel for it, it goes there only, for good. When
+    those webhooks are later deleted or switched off -- by hand, or by Discord
+    rejecting them -- it goes nowhere rather than to every channel: a category
+    meant for leadership must not spill into the public channel because its
+    own webhook went away. The settings and Webhooks pages warn about it.
     """
 
     category = models.CharField(
@@ -1566,13 +1679,24 @@ class AlertRoute(models.Model):
         Webhook,
         blank=True,
         related_name="routes",
-        help_text="Leave empty to use every enabled webhook.",
+        help_text="Leave empty to use every enabled webhook, until a channel is ticked.",
     )
     is_enabled = models.BooleanField(
         default=True, help_text="Uncheck to stop this kind of alert entirely."
     )
+    # The ticks themselves are lost when a webhook is deleted; this is what
+    # remembers that the category was routed. A route with a ticked webhook
+    # counts as routed whatever this says.
+    is_routed = models.BooleanField(
+        default=False,
+        help_text=(
+            "Somebody chose channels for this category. With none of them "
+            "left working it goes nowhere instead of to every enabled webhook."
+        ),
+    )
 
     class Meta:
+        default_permissions = ()
         ordering = ["category"]
         verbose_name = "alert route"
 
@@ -1617,6 +1741,7 @@ class DenOperator(models.Model):
     updated_at = models.DateTimeField(default=timezone_module.now)
 
     class Meta:
+        default_permissions = ()
         verbose_name = "den operator"
 
     def __str__(self) -> str:

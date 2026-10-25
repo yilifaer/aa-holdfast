@@ -53,13 +53,15 @@ CELERYBEAT_SCHEDULE = {
         "task": "holdfast.tasks.update_system_costs",
         "schedule": crontab(minute=35),
     },
-    # Entosis campaigns: public, cached five seconds. The only public evidence
-    # that a sovereignty hub has been reinforced -- the hub detail route has no
-    # state field -- so without this the timer board never turns red.
+    # The public raidable list. Raid Targets only reads what this stores, so
+    # HOLDFAST_RAIDABLE_CACHE_SECONDS has to outlast this interval.
     "holdfast_refresh_raidable": {
         "task": "holdfast.tasks.refresh_raidable",
         "schedule": crontab(minute="*/10"),
     },
+    # Entosis campaigns: public, cached five seconds. The only public evidence
+    # that a sovereignty hub has been reinforced -- the hub detail route has no
+    # state field -- so without this the timer board never turns red.
     "holdfast_update_campaigns": {
         "task": "holdfast.tasks.update_campaigns",
         "schedule": crontab(minute="*/5"),

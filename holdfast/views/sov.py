@@ -19,11 +19,13 @@ from ..models import (
     SystemCostIndex,
     Webhook,
 )
-from ..tasks import update_sov_map
+from ..tasks import enqueue, update_sov_map
 from .common import (
+    report_test_results,
     require_any,
     routes_for_section,
     save_routes,
+    sov_can_enter,
     sov_can_manage,
     sov_can_view_all,
     visible_alliance_ids,
@@ -433,22 +435,29 @@ def settings_save(request):
                 f"Tracked alliance set to {alliance_name(chosen)} from the corporations "
                 "already registered.",
             )
-    if config.home_alliance_id != previous_home:
-        # The sovereignty board follows the tracked set, not the clock.
-        update_sov_map.delay()
+    if config.home_alliance_id != previous_home and not enqueue(update_sov_map):
+        # The sovereignty board follows the tracked set, not the clock -- but
+        # with the broker down, the clock is what is left.
+        messages.info(
+            request, "The sovereignty board follows with the next scheduled map update."
+        )
     return redirect("holdfast:sov_settings")
 
 
-@require_any(*SOV_ANY)
+@require_any(*SOV_ANY, "manage_owners")
 def home(request):
     """Landing page for the sidebar entry.
 
     Which page counts as "the front page" depends on the tier: an officer wants
     the dashboard, an ordinary member can only open the one public-facing page,
-    so send each of them somewhere they are actually allowed to be.
+    so send each of them somewhere they are actually allowed to be. Someone
+    who only registers corporation tokens reaches the Tokens page through this
+    entry, so that is where they go.
     """
     if sov_can_view_all(request.user):
         return redirect("holdfast:sov_dashboard")
+    if not sov_can_enter(request.user):
+        return redirect("holdfast:owners")
     return redirect("holdfast:sov_system_cost")
 
 
@@ -462,16 +471,5 @@ def settings_test(request):
     """
     from ..core.alerts import send_test_for_section
 
-    results = send_test_for_section("sov")
-    delivered = [name for name, ok in results.items() if ok]
-    skipped = [name for name, ok in results.items() if not ok]
-    if delivered:
-        messages.success(
-            request, f"Sent {len(delivered)} test alert(s): {', '.join(delivered)}"
-        )
-    if skipped:
-        messages.warning(
-            request,
-            f"Not sent (no channel, or switched off): {', '.join(skipped)}",
-        )
+    report_test_results(request, send_test_for_section("sov"))
     return redirect("holdfast:sov_settings")

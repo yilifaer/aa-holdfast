@@ -84,11 +84,18 @@ class AlertRoutingTests(TestCase):
         # ... and leaves the other sections alone.
         self.assertTrue(_webhooks_for(AlertCategory.DEN_ATTACK))
 
-    def test_disabled_webhook_is_skipped_but_does_not_silence_the_category(self):
-        """Routing a category only to a webhook that is switched off falls back
-        to the others rather than going quiet."""
+    def test_disabled_webhook_is_skipped(self):
+        route = AlertRoute.for_category(AlertCategory.SOV_FUEL)
+        route.webhooks.set([self.sov, self.den])
+        self.sov.is_enabled = False
+        self.sov.save()
+        self.assertEqual(_webhooks_for(AlertCategory.SOV_FUEL), [self.den])
+
+    def test_a_category_whose_channels_are_all_off_goes_nowhere(self):
+        """It used to fall back to every other webhook, which sent a category
+        routed to one private channel into all of them. See test_routing."""
         route = AlertRoute.for_category(AlertCategory.SOV_FUEL)
         route.webhooks.set([self.sov])
         self.sov.is_enabled = False
         self.sov.save()
-        self.assertEqual(_webhooks_for(AlertCategory.SOV_FUEL), [self.den])
+        self.assertEqual(_webhooks_for(AlertCategory.SOV_FUEL), [])

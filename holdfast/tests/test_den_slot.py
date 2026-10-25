@@ -435,25 +435,13 @@ class FirstSyncWindowTests(TestCase):
         self.den_character = DenCharacter.objects.create(character_ownership=ownership)
 
     def _cutoff(self):
-        """The cutoff sync_notifications would compute for this operator."""
-        from datetime import timedelta
-
+        """The cutoff sync_notifications computes for this operator."""
         from django.utils import timezone
 
-        from ..app_settings import (
-            HOLDFAST_DEN_FIRST_SYNC_GRACE_MINUTES,
-            HOLDFAST_DEN_NOTIFICATION_MAX_AGE_HOURS,
-        )
-        from ..models import DenEvent
+        from ..core.den_sync import notification_cutoff
 
         now = timezone.now()
-        cutoff = now - timedelta(hours=HOLDFAST_DEN_NOTIFICATION_MAX_AGE_HOURS)
-        if not DenEvent.objects.filter(den_character=self.den_character).exists():
-            cutoff = max(
-                cutoff,
-                now - timedelta(minutes=HOLDFAST_DEN_FIRST_SYNC_GRACE_MINUTES),
-            )
-        return now, cutoff
+        return now, notification_cutoff(self.den_character, now)
 
     def test_an_attack_happening_now_survives_the_first_sync(self):
         now, cutoff = self._cutoff()
@@ -467,19 +455,12 @@ class FirstSyncWindowTests(TestCase):
             cutoff, now - timedelta(hours=3), "first sync must stay a narrow window"
         )
 
-    def test_the_window_widens_once_the_operator_has_history(self):
+    def test_the_window_widens_once_the_operator_has_synced(self):
         from datetime import timedelta
 
         from django.utils import timezone
 
-        from ..models import DenEvent
-
-        DenEvent.objects.create(
-            notification_id=123456,
-            den_character=self.den_character,
-            kind=DenEvent.Kind.ATTACKED,
-            timestamp=timezone.now(),
-        )
+        self.den_character.notifications_synced_at = timezone.now()
         now, cutoff = self._cutoff()
         self.assertLess(
             cutoff, now - timedelta(hours=3), "an established operator gets the full age"

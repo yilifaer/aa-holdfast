@@ -28,8 +28,7 @@ hour that CCP caches these routes for anyway, at about 41% of the bucket --
 leaving the rest for the other Auth modules using the same character.
 """
 
-import logging
-
+from allianceauth.services.hooks import get_extension_logger
 from django.core.cache import cache
 from django.db import transaction
 from django.utils import timezone
@@ -57,7 +56,7 @@ from ..providers import esi
 from .scope import tracked_alliance_ids
 from .siphon import detect_siphon
 
-logger = logging.getLogger(__name__)
+logger = get_extension_logger(__name__)
 
 RAIDABLE_CACHE_KEY = "holdfast_raidable_skyhooks"
 
@@ -461,13 +460,14 @@ def resolve_pending_planets(limit: int = 60) -> dict:
     # names too -- otherwise that page shows bare IDs. Only whatever budget the
     # owned skyhooks did not use goes here; ours come first.
     spare = limit - resolved
-    if spare > 0:
+    raidable = cached_raidable_skyhooks() or []
+    if spare > 0 and raidable:
         known = set(
             EvePlanet.objects.filter(
-                id__in=[r.get("planet_id") for r in get_raidable_skyhooks()]
+                id__in=[r.get("planet_id") for r in raidable]
             ).values_list("id", flat=True)
         )
-        for row in get_raidable_skyhooks():
+        for row in raidable:
             if spare <= 0:
                 break
             planet_id = row.get("planet_id")
@@ -736,24 +736,33 @@ def update_campaigns() -> int:
     return len(seen)
 
 
-def get_raidable_skyhooks(force_refresh: bool = False) -> list:
-    """The public list of skyhooks in or approaching a theft window.
+def cached_raidable_skyhooks():
+    """The list ``refresh_raidable`` last stored, or None before it has.
 
-    Held in Redis rather than the database: it is ~200 rows that turn over
-    every few minutes, and writing that to an SD card hourly is pointless.
+    Pages read this and nothing else: a web request must not wait on ESI, or
+    turn an ESI error into a 500. Held in Redis rather than the database: it
+    is ~200 rows that turn over every few minutes, and writing that to an SD
+    card is pointless.
     """
-    if not force_refresh:
-        cached = cache.get(RAIDABLE_CACHE_KEY)
-        if cached is not None:
-            return cached
+    return cache.get(RAIDABLE_CACHE_KEY)
 
+
+def refresh_raidable_skyhooks() -> list:
+    """Fetch the public raidable list and store it for the pages.
+
+    With a list stored, the ETag is used and a 304 means that list is still
+    right: it is kept and stored again, with a fresh lifetime. Returning []
+    there emptied the page until CCP next changed the list. With nothing
+    stored there is nothing for a 304 to refer to, so the fetch is forced.
+    """
+    previous = cache.get(RAIDABLE_CACHE_KEY)
     try:
         result = esi.client.Activities.GetSkyhooksRaidable().result(
-            force_refresh=force_refresh
+            force_refresh=previous is None
         )
     except HTTPNotModified:
-        return cache.get(RAIDABLE_CACHE_KEY) or []
-
-    rows = [entry.model_dump() for entry in result.skyhooks]
+        rows = previous
+    else:
+        rows = [entry.model_dump() for entry in result.skyhooks]
     cache.set(RAIDABLE_CACHE_KEY, rows, HOLDFAST_RAIDABLE_CACHE_SECONDS)
     return rows

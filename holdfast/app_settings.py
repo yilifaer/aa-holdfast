@@ -1,4 +1,9 @@
-"""Tunables. Override any of these in myauth/settings/local.py."""
+"""Settings an install may override in myauth/settings/local.py.
+
+Most tuning lives on the in-app settings pages instead. The scope lists and
+notification types below are constants, not settings: changing them would
+leave every token already issued without what the code asks of it.
+"""
 
 from django.conf import settings
 
@@ -16,9 +21,9 @@ HOLDFAST_ESI_COMPATIBILITY_DATE = _setting(
 )
 
 # Fallback bar for skyhook theft alerts, used only for reagents that have no
-# row in the ReagentThreshold table. Per-reagent bars are set by admins in
-# Django admin (Holdfast -> Reagent alert thresholds); a row is created
-# automatically the first time each reagent is seen on a skyhook.
+# row in the ReagentThreshold table. Per-reagent bars are set by a skyhook
+# manager on the Skyhook settings page; a row is created automatically the
+# first time each reagent is seen on a skyhook.
 HOLDFAST_SKYHOOK_MIN_UNSECURED = _setting("HOLDFAST_SKYHOOK_MIN_UNSECURED", 100)
 
 # Extra alliance IDs to keep sovereignty/ADM records for, on top of the tracked
@@ -26,9 +31,11 @@ HOLDFAST_SKYHOOK_MIN_UNSECURED = _setting("HOLDFAST_SKYHOOK_MIN_UNSECURED", 100)
 # be registered too. Read in core.scope.
 HOLDFAST_TRACK_EXTRA_ALLIANCE_IDS = _setting("HOLDFAST_TRACK_EXTRA_ALLIANCE_IDS", [])
 
-# Seconds to cache the public raidable-skyhook list in Redis. The ESI route
-# itself is cached for 300s, so going below that just burns rate limit.
-HOLDFAST_RAIDABLE_CACHE_SECONDS = _setting("HOLDFAST_RAIDABLE_CACHE_SECONDS", 300)
+# How long the public raidable-skyhook list that refresh_raidable stores in
+# Redis lives. The Raid Targets page only reads it, so this has to outlast
+# the task's ten-minute schedule with room for a failed run or two; below
+# that the page keeps saying the list is being fetched.
+HOLDFAST_RAIDABLE_CACHE_SECONDS = _setting("HOLDFAST_RAIDABLE_CACHE_SECONDS", 1800)
 
 # Detail calls per owner per run. ESI charges two rate-limit tokens for a
 # successful response, so 60 calls is about 120 tokens of the 300-per-15-
@@ -48,8 +55,11 @@ HOLDFAST_OWNER_SYNC_JITTER_SECONDS = _setting("HOLDFAST_OWNER_SYNC_JITTER_SECOND
 # own budget instead of blocking a listing sync.
 HOLDFAST_PLANET_RESOLVE_PER_RUN = _setting("HOLDFAST_PLANET_RESOLVE_PER_RUN", 60)
 
-# Alert log rows older than this many days are pruned. That also re-arms an
-# alert whose condition still holds, so it repeats about this often.
+# Alert log rows older than this many days are pruned once they can no
+# longer stop anything: the structure, operation or event they were about is
+# gone or has moved on. A row whose condition still holds is kept however
+# old, so pruning never repeats an alert. Covers the alert log only; den
+# notifications have their own retention below.
 HOLDFAST_STALE_PRUNE_DAYS = _setting("HOLDFAST_STALE_PRUNE_DAYS", 14)
 
 # Scopes a corporation owner token must carry.
@@ -77,20 +87,25 @@ HOLDFAST_DEN_NOTIFICATION_TYPES = [
     "MercenaryDenNewMTO",
 ]
 
-# Ignore notifications older than this on first sync, so registering a
-# character does not replay months of history into Discord.
-# An operator's very first sync must not replay days of history into Discord,
-# but it must not swallow an attack happening right now either -- which is
-# exactly when a new operator is most likely to be registering. Anything newer
-# than this on a first sync is treated as live.
 # How long a den character whose sync found nothing is left alone before it is
 # listed again. See DenCharacter.idle_until.
 HOLDFAST_DEN_IDLE_HOURS = _setting("HOLDFAST_DEN_IDLE_HOURS", 6)
 
+# An operator's very first sync must not replay days of history into Discord,
+# but it must not swallow an attack happening right now either -- which is
+# exactly when a new operator is most likely to be registering. Anything newer
+# than this on a first sync is treated as live.
 HOLDFAST_DEN_FIRST_SYNC_GRACE_MINUTES = _setting(
     "HOLDFAST_DEN_FIRST_SYNC_GRACE_MINUTES", 90
 )
 
+# A den attack older than this is history: a sync records it without
+# announcing it, and one Discord never took stops being retried.
 HOLDFAST_DEN_NOTIFICATION_MAX_AGE_HOURS = _setting(
     "HOLDFAST_DEN_NOTIFICATION_MAX_AGE_HOURS", 24
 )
+
+# Days a den notification is kept. Its text names the attacker's character,
+# corporation and alliance -- people with no account here -- so it is not
+# kept for good; older ones are pruned daily and not read back in from ESI.
+HOLDFAST_DEN_EVENT_RETENTION_DAYS = _setting("HOLDFAST_DEN_EVENT_RETENTION_DAYS", 30)

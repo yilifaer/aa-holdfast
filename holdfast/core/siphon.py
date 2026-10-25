@@ -24,13 +24,13 @@ un-siphoned readings was a multiple of ten, and all three that the client
 showed at -10.0% were not.
 """
 
-import logging
+from allianceauth.services.hooks import get_extension_logger
 
 # Rates worth testing, widest first. Only 10% has been seen in the wild; the
 # rest are here so a higher anarchy level does not go unnoticed.
 SIPHON_RATES = (10, 20, 30, 40, 50)
 
-logger = logging.getLogger(__name__)
+logger = get_extension_logger(__name__)
 
 
 def detect_siphon(effective_workforce):

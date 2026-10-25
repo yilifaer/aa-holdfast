@@ -25,7 +25,7 @@ pip install aa-holdfast
 Add to the **end** of `myauth/settings/local.py`:
 
 ```python
-if "eveuniverse" not in INSTALLED_APPS:
+if not any(app == "eveuniverse" or app.startswith("eveuniverse.") for app in INSTALLED_APPS):
     INSTALLED_APPS += ["eveuniverse"]
 INSTALLED_APPS += ["holdfast"]
 
@@ -48,7 +48,8 @@ this". Three things worth knowing:
 - **`eveuniverse` must be in `INSTALLED_APPS`, exactly once.** This app has
   foreign keys into its models, so leaving it out stops Auth from starting --
   and so does listing it twice: Django refuses duplicate apps. aa-structures
-  and several other apps add it too, hence the check above.
+  and several other apps add it too, some by its AppConfig path
+  (`eveuniverse.apps.EveUniverseConfig`), hence the check above.
 - **No `eveuniverse` preload.** Types, systems and planets are fetched as they
   are first seen.
 - **11 scheduled tasks** come from `holdfast.schedule`. Merging the dict beats
@@ -57,9 +58,20 @@ this". Three things worth knowing:
   `CELERYBEAT_SCHEDULE["holdfast_update_all_owners"]["schedule"] = crontab(...)`,
   or read [`holdfast/schedule.py`](https://github.com/yilifaer/aa-holdfast/blob/main/holdfast/schedule.py) for what each does.
 
-Requires Alliance Auth 5.2+ (CI runs 5.2, 5.4 and the latest release), django-esi
-9.10+ (for compatibility dates),
-django-eveuniverse 2.0+, dhooks-lite, PyYAML.
+Requires Alliance Auth 5.2 or later 5.x (CI runs 5.2, 5.4 and the latest
+release), django-esi 9.10 or 10.x (9.10 is the oldest CI tests), django-eveuniverse
+2.0+, dhooks-lite, PyYAML.
+
+**Your EVE developer application** (developers.eveonline.com, the one Auth's
+`ESI_SSO_CLIENT_ID` belongs to) must have these four scopes enabled, or the
+SSO step fails:
+
+| Scope | Used for |
+|---|---|
+| `esi-structures.read_corporation.v1` | sovereignty hubs and skyhooks (corporation token) |
+| `esi-structures.read_character.v1` | a member's own mercenary dens |
+| `esi-activities.read_character.v1` | tactical operations on those dens |
+| `esi-characters.read_notifications.v1` | "your den is being shot" |
 
 ## Setup
 
@@ -79,8 +91,8 @@ every page, badge and alert while it is off and come back when it is on.
 > Add button mints the right one.
 
 **2. Add a Discord webhook** on the **Webhooks** page — beside Tokens in every
-section's header, open to any section manager; Django admin still works —
-then pick which alerts go where on each section's settings page. **Send test**
+section's header, open to any section manager; Django admin uses the same
+form — then pick which alerts go where on each section's settings page. **Send test**
 on a webhook posts one sample to that channel alone, pings included.
 
 **3. Grant permissions** — see [Permissions](#permissions).
@@ -114,11 +126,17 @@ includes the ones below it — grant one per section, never two.
 `basic_access` opens the member-facing page of each section: System Cost, Raid
 Targets, and your own dens and timers. A den **user** may also apply for a den
 slot — permission to anchor in your space. `manage_owners` registers
-corporation tokens and sits outside the ladders.
+and switches corporation tokens and sits outside the ladders; someone who holds
+only that gets the SOV Monitor entry, which leads to the Tokens page. Den
+characters need none of it: each player registers their own.
+
+Holdfast declares only these nine. Its models carry none of Django's
+add/change/delete/view permissions, so Django admin is for superusers.
 
 Put `basic_access` on your **Member state** rather than a group: it covers only
 what any member should see, and a state follows membership, so nobody has to
-be pruned later. A typical split:
+be pruned later. Officers see the whole tracked alliance, not one corporation;
+see [Design notes](#design-notes). A typical split:
 
 | Who | Grant |
 |---|---|
@@ -128,6 +146,21 @@ be pruned later. A typical split:
 | Sov fuel team | `sov_officer` |
 | Skyhook team | `skyhook_officer` |
 | Leadership | `sov_manage`, `skyhook_manage`, `den_manage`, `manage_owners` |
+
+## charlink
+
+With aa-charlink installed, Holdfast adds one entry to its page, **ticked by
+default**, asking for all four scopes above. Linking a character registers:
+
+| What | When |
+|---|---|
+| a den character | for anyone with den access (`basic_access` or a den permission); one with nothing to sync is re-checked every `HOLDFAST_DEN_IDLE_HOURS` |
+| its corporation, as on the Tokens page | only for a `manage_owners` holder, only inside the tracked alliance, and only if the corporation is not registered yet |
+
+A registered corporation keeps its token character; switching it is done on the
+Tokens page. charlink stores an entry's default the first time it sees it, so
+migration 0013 (0.1.10) flipped the stored default to ticked once. Untick it in
+charlink's admin and it stays off.
 
 ## What it does
 
@@ -180,7 +213,16 @@ skyhook". So:
 Den sites are the temperate-planet skyhooks you hold; slots appear on their own.
 A member joins a group, claims a free slot through EVE SSO, a manager approves,
 and the den syncs once anchored. Managers can revoke — which does not unanchor
-anything, so the slot says *revoked, den still up* until it comes down.
+anything, so the slot says *revoked, den still up* until it comes down. Claims
+are decided on the den admin page, which tells the member; Django admin shows
+a claim's status but will not change it.
+
+The den admin page lists the people to contact: whoever runs a den or holds a
+pending or approved claim on the ground that officer sees — not every character
+registered, which with charlink is most of the alliance's alts. Someone who
+loses den access (leaves, or drops to a state without it) leaves that list and
+their characters stop being polled; their records stay, and they pick up again
+if access comes back.
 
 Tactical operations on your own dens appear on the den dashboard and the
 sidebar badge, and are announced to Discord, once the den is at the anarchy
@@ -201,13 +243,22 @@ in Chinese above and will not be for you — and the third is the same for
 everyone.
 
 Per-category routing, so fuel warnings and "something is being shot" can go to
-different channels. Thresholds and switches live on each section's settings
+different channels. A category nobody has routed goes to every enabled webhook,
+so a fresh install alerts somewhere. Once channels are ticked for it, it goes
+only there: if they are all deleted or switched off it goes nowhere rather than
+to every channel, and the settings and Webhooks pages list it until it is
+routed again. A webhook Discord answers 404 (deleted) or 401 (token reset) is
+switched off automatically with the reason shown on the Webhooks page; ticking
+Enabled again clears it. A 429 or 5xx is retried on the next run. Thresholds and switches live on each section's settings
 page, not in `local.py`. A webhook can mention Auth groups instead of @here —
 pick them on the Webhooks page; each needs a Discord role of the same name,
 which Auth's Discord service creates. A webhook URL must be Discord's own
 (`https://discord.com/api/webhooks/...`, or the `discordapp.com`, canary and
-PTB spellings); the form refuses anything else, since the server posts every
-alert to whatever is saved there.
+PTB spellings); the form refuses anything else, here and in Django admin,
+since the server posts every alert to whatever is saved there. The URL is the
+channel's password, so once saved it is only ever shown masked
+(`https://discord.com/api/webhooks/1234…/…abcd`); leave the field empty when
+editing to keep it, or paste a new one to replace it.
 
 ```bash
 python manage.py holdfast_test_alerts             # one sample of every alert
@@ -215,6 +266,14 @@ python manage.py holdfast_test_webhook
 python manage.py holdfast_update                  # sync now, in the foreground
 python manage.py holdfast_import_dens dens.csv    # load a den census
 ```
+
+`holdfast_update` runs every scheduled job once, in the schedule's order:
+owners, den characters (idle ones too), den slots, workforce tracking, planet
+names, cost indices, campaigns, the sov map, raidable skyhooks, then alerts. A
+step that fails is reported and the rest still run. `--owner PK` syncs one
+owner, even a disabled or out-of-scope one; `--skip-dens`, `--skip-public` (the
+four public routes) and `--skip-alerts` leave those parts out; `--budget` sets
+the detail calls per owner. Only the alert-log prune is left to beat.
 
 `holdfast_import_dens` takes `planet,owner,corporation,hostile` and records a
 den on each matching slot. Rows whose planet does not match are reported rather
@@ -234,8 +293,10 @@ Each run pulls both listings (they decide what exists) and spends
 `HOLDFAST_DETAIL_CALLS_PER_RUN` detail calls on whatever has gone longest
 without one. At the default 60 that is `60 x 2 + 2 x 2 = 124` tokens, 41% of the
 bucket, and a 150-structure corp refreshes fully in about 40 minutes — inside
-the hour CCP caches these routes anyway. Structures awaiting a first detail pull
-show as *queued*.
+the hour CCP caches these routes anyway. That rotation is why the owner sync
+runs every 15 minutes: the listings change at most hourly, and most runs read
+the same two again for 4 tokens. Structures awaiting a first detail pull show
+as *queued*.
 
 ## Settings
 
@@ -249,24 +310,119 @@ HOLDFAST_SKYHOOK_MIN_UNSECURED = 100             # fallback; see per-reagent bar
 HOLDFAST_TRACK_EXTRA_ALLIANCE_IDS = []           # tracked alongside the alliance on the SOV settings page
 HOLDFAST_OWNER_SYNC_JITTER_SECONDS = 120
 HOLDFAST_PLANET_RESOLVE_PER_RUN = 60
-HOLDFAST_DEN_NOTIFICATION_MAX_AGE_HOURS = 24
+HOLDFAST_DEN_NOTIFICATION_MAX_AGE_HOURS = 24      # an older den attack is neither announced nor retried
 HOLDFAST_DEN_FIRST_SYNC_GRACE_MINUTES = 90
 HOLDFAST_DEN_IDLE_HOURS = 6                      # re-check a character with no dens this often
-HOLDFAST_RAIDABLE_CACHE_SECONDS = 300
-HOLDFAST_STALE_PRUNE_DAYS = 14
+HOLDFAST_RAIDABLE_CACHE_SECONDS = 1800           # keep above the 10-minute refresh
+HOLDFAST_STALE_PRUNE_DAYS = 14                   # alert log rows that can stop nothing
+HOLDFAST_DEN_EVENT_RETENTION_DAYS = 30           # den notification text
 ```
 
 ## Notes
 
+- Logs go through Auth's extension logger, so they land in `log/extensions.log`
+  beside every other app's, named by module (`holdfast.core.alerts`, ...).
 - These routes need an `X-Compatibility-Date` of 2026-05-19 or later. Without
   one ESI answers 404 rather than saying why, and the old
   `/latest/swagger.json` spec is gone — which is why so little is built on them.
-  `django-esi` 9.10+ sends the header; this app pins its own date.
+  django-esi sends the header; this app pins its own date.
 - A tactical operation's `dungeon_type_id` indexes dungeons, not inventory
   types, so it is shown as a number. Nothing names a dungeon.
 - `aa-structures` parses skyhook *notifications* and builds timers from them. It
   does not read the structure routes, so it cannot see fuel, reagent stock or
   theft windows. The two complement each other.
+
+## Data protection
+
+Beyond ESI structure data, Holdfast keeps:
+
+| Data | About | Kept |
+|---|---|---|
+| Den notification text: attacker character, corporation and alliance ids | anyone, members or not | `HOLDFAST_DEN_EVENT_RETENTION_DAYS` (30), pruned daily |
+| Hand-recorded den owners and corporations (den slots, CSV import) | anyone, as typed by a manager | until edited, or the slot goes |
+| Timezone and contact note | members, entered by themselves | until the user is deleted |
+| Den claims and decisions | members | as history, also after the slot goes |
+
+Den officers see the timezone, note, alts and Discord name (read from Auth's
+Discord service, not stored here) of the people running a den or holding a
+claim on their ground. Den attack alerts post the attacker's corporation or
+alliance name to Discord. The alert log holds only keys, pruned after
+`HOLDFAST_STALE_PRUNE_DAYS` once they can no longer stop an alert repeating.
+
+## Upgrade
+
+```bash
+pip install -U aa-holdfast
+python manage.py migrate
+python manage.py collectstatic --noinput
+supervisorctl restart myauth:
+```
+
+Read the [CHANGELOG](https://github.com/yilifaer/aa-holdfast/blob/main/CHANGELOG.md)
+first. The schedule comes from the package, so new or retuned beat entries
+arrive with the restart.
+
+## Uninstall
+
+In this order — beat keeps its schedule in the database, so the rows go
+before the tables or it keeps running tasks against tables that are gone;
+`migrate holdfast zero` needs the app still installed; and `local.py` imports
+`holdfast.schedule`, so settings stop loading if the package goes first:
+
+1. Delete the two `holdfast.schedule` lines from `local.py`, and any line that
+   retunes a `holdfast_` entry, so a restart does not put the schedule back
+   (a leftover retune would fail to load without them).
+2. In `python manage.py shell`, stop the schedule:
+
+   ```python
+   from django_celery_beat.models import PeriodicTask
+   PeriodicTask.objects.filter(name__startswith="holdfast_").delete()
+   ```
+
+3. `supervisorctl restart myauth:`, and give the workers a few minutes to
+   finish any Holdfast task already queued.
+4. `python manage.py migrate holdfast zero`, and step 5 straight after: until
+   that restart, the sidebar's Holdfast badges have no tables to count.
+5. Delete `INSTALLED_APPS += ["holdfast"]` (keep `eveuniverse` if another app
+   uses it), then `supervisorctl restart myauth:`.
+6. In `python manage.py shell`, remove what Auth keeps by name:
+
+   ```python
+   from django.apps import apps
+   from django.contrib.contenttypes.models import ContentType
+   from django.core.cache import cache
+
+   ContentType.objects.filter(app_label="holdfast").delete()  # permissions and grants go with them
+   cache.delete("holdfast:sov_map_tracked")
+   if apps.is_installed("charlink"):
+       apps.get_model("charlink", "AppSettings").objects.filter(app_name="holdfast_tools").delete()
+   ```
+
+   Not `remove_stale_contenttypes --include-stale-apps`: that removes every
+   stale app's content types, not only Holdfast's.
+7. `pip uninstall aa-holdfast`, and restart once more.
+
+ESI tokens stay with django-esi, where other apps may use them.
+
+## Design notes
+
+- **One alliance per install, no corporation tier.** Officers and managers see
+  every registered corporation of the tracked alliance: fuel, timers and dens
+  are run across corporations, so a corporation view would hide what the job
+  needs. Separate audiences need separate Auths.
+- **ESI is fetched here, not read from corptools.** corptools needs a
+  corporation audit per corporation, syncs on its own cadence, and holds no
+  skyhooks, raidable list, sov map or campaigns, which would have to be fetched
+  here anyway.
+- **Django admin is for superusers.** It applies the Webhooks page's URL rules
+  and shows a claim's status read-only. It still skips the Tokens page's
+  alliance check — an owner outside the tracked alliance just sits unsynced —
+  and lets you edit synced rows, which the next sync overwrites.
+- **A corporation token outlives its registrant's permission.** An owner keeps
+  syncing with the token it was registered with after that user loses
+  `manage_owners`, until a manager disables it on the Tokens page: the
+  permission is checked when registering, not on every sync.
+- **CI runs sqlite.** MariaDB, MySQL and PostgreSQL are not tested.
 
 ## Development
 

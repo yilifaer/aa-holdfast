@@ -15,16 +15,17 @@ Budgets here are small on purpose: the ``char-structure`` bucket allows only
 30 requests per 15 minutes, and ``char-notification`` only 15.
 """
 
-import logging
 from datetime import timedelta
 
 import yaml
+from allianceauth.services.hooks import get_extension_logger
 from django.utils import timezone
 from esi.exceptions import HTTPNotModified
 from eveuniverse.models import EvePlanet
 
 from ..app_settings import (
     HOLDFAST_DEN_DETAIL_CALLS_PER_RUN,
+    HOLDFAST_DEN_EVENT_RETENTION_DAYS,
     HOLDFAST_DEN_FIRST_SYNC_GRACE_MINUTES,
     HOLDFAST_DEN_IDLE_HOURS,
     HOLDFAST_DEN_NOTIFICATION_MAX_AGE_HOURS,
@@ -33,6 +34,7 @@ from ..app_settings import (
 from ..models import (
     TEMPERATE_PLANET_TYPE_ID,
     DenCharacter,
+    DenClaim,
     DenEvent,
     DenSlot,
     HoldfastConfig,
@@ -43,7 +45,7 @@ from ..models import (
 from ..providers import esi
 from .esi_sync import ESIBucketLimitException
 
-logger = logging.getLogger(__name__)
+logger = get_extension_logger(__name__)
 
 
 # --------------------------------------------------------------------------
@@ -69,16 +71,29 @@ def sync_den_slots() -> dict:
 
     # A skyhook we lost takes its slot with it through the FK cascade. What is
     # dropped here is a slot whose planet turned out not to be temperate after
-    # all. Slots whose planet has not been named yet are left strictly alone --
-    # deleting one would take its claims with it.
+    # all. Slots whose planet has not been named yet are left strictly alone:
+    # one that is in fact temperate would come back as a new slot, and its
+    # claims would no longer point at it.
     stale = DenSlot.objects.exclude(skyhook__in=temperate).exclude(
         skyhook__eve_planet__isnull=True
     )
     removed = stale.count()
     stale.delete()
 
-    if created or removed:
-        logger.info("Den slots: +%s, -%s", created, removed)
+    # A claim outlives its slot as history (DenClaim.slot is SET_NULL). One
+    # still pending can never be decided -- the den admin page only shows
+    # claims on slots that exist -- so it is closed rather than left waiting
+    # on the member's page for good.
+    closed = DenClaim.objects.filter(
+        slot__isnull=True, status=DenClaim.Status.PENDING
+    ).update(
+        status=DenClaim.Status.REJECTED,
+        decided_at=timezone.now(),
+        decision_note="The slot no longer exists: its skyhook is gone.",
+    )
+
+    if created or removed or closed:
+        logger.info("Den slots: +%s, -%s, %s orphaned claim(s) closed", created, removed, closed)
     return {"created": created, "removed": removed, "total": DenSlot.objects.count()}
 
 
@@ -289,16 +304,8 @@ def sync_notifications(den_character: DenCharacter, token) -> int:
         return 0
 
     now = timezone.now()
-    cutoff = now - timedelta(hours=HOLDFAST_DEN_NOTIFICATION_MAX_AGE_HOURS)
-    if not DenEvent.objects.filter(den_character=den_character).exists():
-        # First sync for this operator. Suppressing *everything* here was too
-        # blunt: the first thing that happens to a new operator's den is
-        # precisely what they registered to hear about, and it was the one
-        # event guaranteed to be swallowed. Narrow the window instead of
-        # closing it.
-        cutoff = max(
-            cutoff, now - timedelta(minutes=HOLDFAST_DEN_FIRST_SYNC_GRACE_MINUTES)
-        )
+    cutoff = notification_cutoff(den_character, now)
+    retained_from = now - timedelta(days=HOLDFAST_DEN_EVENT_RETENTION_DAYS)
 
     created = 0
     for item in result:
@@ -307,7 +314,10 @@ def sync_notifications(den_character: DenCharacter, token) -> int:
         if kind not in HOLDFAST_DEN_NOTIFICATION_TYPES:
             continue
         timestamp = data.get("timestamp")
-        if not timestamp:
+        # Past retention it would only be pruned again tonight; ESI keeps a
+        # notification as long as it likes, and reading it back in every sync
+        # would undo the prune.
+        if not timestamp or timestamp < retained_from:
             continue
 
         text = data.get("text") or ""
@@ -329,7 +339,42 @@ def sync_notifications(den_character: DenCharacter, token) -> int:
         )
         created += int(was_created)
 
+    if den_character.notifications_synced_at is None:
+        # An update: the sync holds this instance for a while, and a save
+        # would put back whatever it read at the start.
+        DenCharacter.objects.filter(
+            pk=den_character.pk, notifications_synced_at__isnull=True
+        ).update(notifications_synced_at=now)
+        den_character.notifications_synced_at = now
     return created
+
+
+def notification_cutoff(den_character: DenCharacter, now):
+    """Notifications older than this are backfill: kept, never announced."""
+    cutoff = now - timedelta(hours=HOLDFAST_DEN_NOTIFICATION_MAX_AGE_HOURS)
+    if den_character.notifications_synced_at is None:
+        # First sync for this operator. Suppressing *everything* here was too
+        # blunt: the first thing that happens to a new operator's den is
+        # precisely what they registered to hear about, and it was the one
+        # event guaranteed to be swallowed. Narrow the window instead of
+        # closing it.
+        cutoff = max(
+            cutoff, now - timedelta(minutes=HOLDFAST_DEN_FIRST_SYNC_GRACE_MINUTES)
+        )
+    return cutoff
+
+
+def prune_den_events() -> int:
+    """Drop den notifications past HOLDFAST_DEN_EVENT_RETENTION_DAYS.
+
+    Their text carries the attacker's character, corporation and alliance --
+    people with no account here -- and nothing shows one that old: the den
+    timers page lists a week of events, and an attack alert gives up within a
+    day.
+    """
+    cutoff = timezone.now() - timedelta(days=HOLDFAST_DEN_EVENT_RETENTION_DAYS)
+    deleted, _ = DenEvent.objects.filter(timestamp__lt=cutoff).delete()
+    return deleted
 
 
 def parse_notification_body(text: str) -> dict:

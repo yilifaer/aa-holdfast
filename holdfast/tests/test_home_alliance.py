@@ -220,7 +220,7 @@ class TrackedSetTests(TestCase):
         it was harmless. It must stay harmless: this is read on every page."""
         set_home(HOME)
         with extras("FRND", None, str(FRIEND)), self.assertLogs(
-            "holdfast.core.scope", "WARNING"
+            scope.logger, "WARNING"
         ) as logged:
             self.assertEqual(scope.tracked_alliance_ids(), {HOME, FRIEND})
         self.assertEqual(len(logged.records), 2)
@@ -705,7 +705,7 @@ class RegistrationGuardTests(TestCase):
         unknown = corporation(98000247, "Unknown Corp")  # Auth has no alliance for it
         alt = self._alt(94000009, unknown, FOREIGN)  # but the character does
         self.refresh.side_effect = OSError("esi down")
-        with self.assertLogs("holdfast.core.scope", "WARNING"):
+        with self.assertLogs(scope.logger, "WARNING"):
             refusal = scope.registration_refusal(unknown, alt, self.manager)
         self.assertIsNotNone(refusal)
         # Auth has no row for the alliance, so it is named by id.
@@ -881,6 +881,89 @@ class CharlinkRegistrationTests(TestCase):
         self.assertEqual(notes, [])
         owner_queued.assert_not_called()
         self.assertFalse(Owner.objects.exists())
+
+    def test_linking_an_alt_leaves_a_registered_corporation_s_token_alone(self):
+        """charlink links every character a person has, and a director's alt
+        in the same corporation usually lacks the Station Manager role. It
+        used to take over the corporation's token, and the next sync 403'd."""
+        station_manager = CharacterOwnership.objects.get(character=self.main)
+        registered = Owner.objects.create(
+            corporation=self.home_corp, character_ownership=station_manager
+        )
+        alt = character_for(self.manager, 94000204, self.home_corp, HOME, main=False)
+        notes, owner_queued = self._add(self.manager, alt)
+        registered.refresh_from_db()
+        self.assertEqual(registered.character_ownership, station_manager)
+        owner_queued.assert_not_called()
+        self.assertEqual(len(notes), 1)
+        level, text = notes[0]
+        self.assertEqual(level, "info")
+        self.assertIn(self.main.character_name, text)
+        self.assertIn("Tokens page", text)
+
+    def test_relinking_the_registered_character_refreshes_its_sync(self):
+        station_manager = CharacterOwnership.objects.get(character=self.main)
+        registered = Owner.objects.create(
+            corporation=self.home_corp, character_ownership=station_manager
+        )
+        notes, owner_queued = self._add(self.manager, self.main)
+        owner_queued.assert_called_once_with(registered.pk)
+        self.assertEqual(notes, [])
+
+    def test_an_owner_whose_character_was_unlinked_takes_the_new_one(self):
+        """Nothing to replace: the corporation has no token character at all,
+        and its sync fails until somebody supplies one."""
+        orphan = Owner.objects.create(corporation=self.home_corp, character_ownership=None)
+        alt = character_for(self.manager, 94000205, self.home_corp, HOME, main=False)
+        _notes, owner_queued = self._add(self.manager, alt)
+        orphan.refresh_from_db()
+        self.assertEqual(orphan.character_ownership.character, alt)
+        owner_queued.assert_called_once_with(orphan.pk)
+
+    def test_a_character_owned_by_someone_else_registers_nothing(self):
+        """The manual path only ever uses the requesting user's own link; this
+        one looked the ownership up by character alone."""
+        from ..models import DenCharacter
+
+        stranger = user_with("stranger", "basic_access")
+        theirs = character_for(stranger, 94000206, self.home_corp, HOME)
+        request = request_for(self.manager, "/charlink/login/", "get")
+        with (
+            mock.patch.object(tasks.update_owner, "delay"),
+            mock.patch.object(tasks.update_den_character, "delay"),
+            self.assertRaises(CharacterOwnership.DoesNotExist),
+        ):
+            self.hook._add_all(request, Token(theirs.character_id))
+        self.assertFalse(DenCharacter.objects.exists())
+        self.assertFalse(Owner.objects.exists())
+        self.assertEqual(messages_of(request)[0][0], "error")
+
+    def test_a_manager_without_den_access_registers_the_corporation_only(self):
+        """The den fan-out skips a user without den access, and the Tokens
+        page will not add a den character for one. charlink did, synced it
+        once, and left it enabled and never synced again."""
+        from allianceauth.eveonline.models import EveCharacter
+
+        from ..models import DenCharacter
+
+        director = user_with("director", "manage_owners")
+        main = character_for(director, 94000207, self.home_corp, HOME)
+        request = request_for(director, "/charlink/login/", "get")
+        with (
+            mock.patch.object(tasks.update_owner, "delay") as owner_queued,
+            mock.patch.object(tasks.update_den_character, "delay") as den_queued,
+        ):
+            self.hook._add_all(request, Token(main.character_id))
+        self.assertFalse(DenCharacter.objects.exists())
+        den_queued.assert_not_called()
+        registered = Owner.objects.get(corporation=self.home_corp)
+        owner_queued.assert_called_once_with(registered.pk)
+
+        # And charlink shows the character as linked, by the token it gave.
+        self.assertTrue(self.hook._added(main))
+        annotated = EveCharacter.objects.annotate(added=self.hook._ADDED_ANNOTATION)
+        self.assertTrue(annotated.get(pk=main.pk).added)
+        self.assertFalse(annotated.get(pk=self.main.pk).added)
 
     def test_the_dead_entry_points_are_gone(self):
         """Neither was wired to charlink; a guard on them would have guarded

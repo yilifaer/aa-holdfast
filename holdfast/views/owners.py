@@ -12,10 +12,9 @@ stays regardless: charlink is optional, and an alliance should never be forced
 to install a second app to use this one.
 """
 
-import logging
-
 from allianceauth.authentication.models import CharacterOwnership
 from allianceauth.eveonline.models import EveCharacter, EveCorporationInfo
+from allianceauth.services.hooks import get_extension_logger
 from django.contrib import messages
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
@@ -33,11 +32,12 @@ from ..core.scope import (
     tracked_alliance_ids,
 )
 from ..models import DenCharacter, Owner
+from ..tasks import enqueue
 from ..tasks import update_den_character as update_den_character_task
 from ..tasks import update_owner as update_owner_task
 from .common import require_any, sov_can_manage
 
-logger = logging.getLogger(__name__)
+logger = get_extension_logger(__name__)
 
 
 @require_any("manage_owners")
@@ -132,14 +132,16 @@ def add_owner(request, token):
         corporation=corporation,
         defaults={"character_ownership": ownership},
     )
-    update_owner_task.delay(owner.pk)
+    queued = enqueue(update_owner_task, owner.pk)
     messages.success(
         request,
         f"{'Registered' if created else 'Updated'} {corporation} using {character}. "
         + (
-            "The first sync is running now."
-            if owner.is_enabled
-            else "It is disabled; enable it on this page when ready."
+            "It is disabled; enable it on this page when ready."
+            if not owner.is_enabled
+            else "The first sync is running now."
+            if queued
+            else "The first sync runs with the next scheduled sync."
         ),
     )
     return redirect("holdfast:owners")
@@ -157,11 +159,15 @@ def add_den_character(request, token):
     den_character, created = DenCharacter.objects.update_or_create(
         character_ownership=ownership, defaults={"is_enabled": True}
     )
-    update_den_character_task.delay(den_character.pk)
+    queued = enqueue(update_den_character_task, den_character.pk)
     messages.success(
         request,
         f"{'Registered' if created else 'Refreshed'} {character}. "
-        "Their dens will appear shortly.",
+        + (
+            "Their dens will appear shortly."
+            if queued
+            else "Their dens appear after the next scheduled sync."
+        ),
     )
     return redirect("holdfast:den_information")
 

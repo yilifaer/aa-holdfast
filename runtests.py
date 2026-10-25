@@ -24,6 +24,16 @@ def main(argv):
     )
     django.setup()
 
+    # An Auth project's celery.py points celery_once at Auth's Django cache
+    # backend. This harness has no celery.py, so the same goes on the default
+    # app here; without it every QueueOnce task fails to dispatch.
+    from celery import current_app
+
+    current_app.conf.ONCE = {
+        "backend": "allianceauth.services.tasks.DjangoBackend",
+        "settings": {},
+    }
+
     # Auth's base template asks django-sri for an integrity hash of each static
     # file, and django-sri hashes the collected copy. Without this, every test
     # that renders a page fails on a missing STATIC_ROOT rather than on

@@ -18,37 +18,73 @@ from allianceauth.eveonline.models import EveCharacter, EveCorporationInfo
 from charlink.app_imports.utils import AppImport, LoginImport
 from charlink.utils import users_with_permissions
 from django.contrib import messages
-from django.db.models import Exists, OuterRef
+from django.db.models import BooleanField, Case, Exists, OuterRef, Value, When
 
 from ..app_settings import HOLDFAST_DEN_ESI_SCOPES, HOLDFAST_ESI_SCOPES
 from ..core.scope import registration_refusal
 from ..models import DenCharacter, Owner
+from ..tasks import enqueue
 from ..tasks import update_den_character as update_den_character_task
 from ..tasks import update_owner as update_owner_task
 from ..views.common import den_can_enter
 
 
-def _ownership(token):
+def _ownership(request, token):
+    """The requesting user's own link to the token's character.
+
+    By user as well as character, like the manual path: charlink's login flow
+    should only ever hand over a character the user owns, and this is where
+    that stops being an assumption. Raising is right here -- nothing has been
+    written yet, so charlink's "Failed to add character" is true.
+    """
     character = EveCharacter.objects.get_character_by_id(token.character_id)
     if character is None:
         character = EveCharacter.objects.create_character(token.character_id)
-    return CharacterOwnership.objects.get(character=character), character
+    try:
+        ownership = CharacterOwnership.objects.get(user=request.user, character=character)
+    except CharacterOwnership.DoesNotExist:
+        messages.error(request, f"{character} is not linked to your account.")
+        raise
+    return ownership, character
 
 
-def _den_added(character: EveCharacter) -> bool:
-    return DenCharacter.objects.filter(
-        character_ownership__character=character
-    ).exists()
+def _added(character: EveCharacter) -> bool:
+    """Linked here: a den character, or the token of a registered corporation
+    -- which is all a ``manage_owners`` holder without den access gets."""
+    return (
+        DenCharacter.objects.filter(character_ownership__character=character).exists()
+        or Owner.objects.filter(character_ownership__character=character).exists()
+    )
+
+
+# The same answer, for charlink's list of every character.
+_ADDED_ANNOTATION = Case(
+    When(
+        Exists(DenCharacter.objects.filter(character_ownership__character_id=OuterRef("pk"))),
+        then=Value(True),
+    ),
+    When(
+        Exists(Owner.objects.filter(character_ownership__character_id=OuterRef("pk"))),
+        then=Value(True),
+    ),
+    default=Value(False),
+    output_field=BooleanField(),
+)
 
 
 def _add_all(request, token):
     """One checkbox, both jobs -- decided by what the person is allowed to do.
 
-    Every authorised character is registered as a den operator, because den
-    routes are character-scoped and that is the common case. A corporation
-    owner is registered as well when the user holds `manage_owners`; whether
-    the character actually has the in-game Station Manager role only shows up
-    on the first sync, which ESI answers with a 403 if they do not.
+    Every authorised character of a user with den access is registered as a
+    den operator, because den routes are character-scoped and that is the
+    common case. One without den access -- a ``manage_owners`` holder only --
+    gets no den character: the Tokens page would not let them add one, and
+    the den fan-out skips them, so it would have synced once and then sat
+    enabled and never synced again. A corporation owner is registered when
+    the user holds `manage_owners` and the corporation has none yet; an
+    existing owner keeps its token character.
+    Whether the character actually has the in-game Station Manager role only
+    shows up on the first sync, which ESI answers with a 403 if they do not.
 
     A corporation outside the tracked alliance is refused the same way the
     Tokens page refuses it -- but not by raising. charlink swallows any
@@ -57,7 +93,7 @@ def _add_all(request, token):
     refusal goes out as a warning of its own and the function returns
     normally, so charlink's success line covers the den part that did happen.
     """
-    ownership, character = _ownership(token)
+    ownership, character = _ownership(request, token)
 
     # Decided before anything is written: the guard may refresh the
     # corporation from ESI, and its answer does not depend on the den half.
@@ -66,10 +102,14 @@ def _add_all(request, token):
         corporation = _corporation_for(character)
         refusal = registration_refusal(corporation, character, request.user)
 
-    den_character, _created = DenCharacter.objects.update_or_create(
-        character_ownership=ownership, defaults={"is_enabled": True}
-    )
-    update_den_character_task.delay(den_character.pk)
+    if den_can_enter(request.user):
+        den_character, _created = DenCharacter.objects.update_or_create(
+            character_ownership=ownership, defaults={"is_enabled": True}
+        )
+        # Saved either way; a broker that is down must not turn that into
+        # charlink's "Failed to add character".
+        if not enqueue(update_den_character_task, den_character.pk):
+            messages.info(request, f"{character}'s dens appear after the next scheduled sync.")
 
     if corporation is None:
         return
@@ -77,18 +117,36 @@ def _add_all(request, token):
         messages.warning(request, refusal)
         return
 
-    # No is_enabled in the defaults, for the reason views/owners gives: a
-    # re-added token must not switch on an owner a manager disabled.
-    owner, _created = Owner.objects.update_or_create(
-        corporation=corporation,
-        defaults={"character_ownership": ownership},
+    # Never is_enabled: a re-added token must not switch on an owner a
+    # manager disabled, for the reason views/owners gives.
+    owner, created = Owner.objects.get_or_create(
+        corporation=corporation, defaults={"character_ownership": ownership}
     )
+    if not created and owner.character_ownership_id not in (None, ownership.pk):
+        # charlink links every character a person has, and a director's alt in
+        # the same corporation usually lacks the Station Manager role; taking
+        # the token over would 403 the corporation's next sync. Switching is a
+        # deliberate act, done on the Tokens page.
+        messages.info(
+            request,
+            f"{corporation} is already registered with "
+            f"{owner.character_ownership.character}; that stays its token. To "
+            f"switch it to {character}, use Add corporation on the Tokens page "
+            f"with {character}.",
+        )
+        return
+    if owner.character_ownership_id is None:
+        # Its character was unlinked, so there is no token to replace and the
+        # corporation does not sync until somebody supplies one.
+        owner.character_ownership = ownership
+        owner.save(update_fields=["character_ownership"])
     if not owner.is_enabled:
         messages.info(
             request,
             f"{corporation} is disabled; enable it on the Tokens page when ready.",
         )
-    update_owner_task.delay(owner.pk)
+    if not enqueue(update_owner_task, owner.pk):
+        messages.info(request, f"{corporation}'s first sync runs with the next scheduled sync.")
 
 
 def _corporation_for(character):
@@ -114,12 +172,8 @@ app_import = AppImport(
             check_permissions=lambda user: (
                 den_can_enter(user) or user.has_perm("holdfast.manage_owners")
             ),
-            is_character_added=_den_added,
-            is_character_added_annotation=Exists(
-                DenCharacter.objects.filter(
-                    character_ownership__character_id=OuterRef("pk")
-                )
-            ),
+            is_character_added=_added,
+            is_character_added_annotation=_ADDED_ANNOTATION,
             get_users_with_perms=lambda: users_with_permissions(
                 [
                     "holdfast.basic_access",

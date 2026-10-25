@@ -1,14 +1,26 @@
-"""Run a full sync in the foreground. Handy for the first run and for debugging."""
+"""Run every scheduled job once, in the foreground.
+
+The first run after installing, and debugging. It does what beat does, in the
+order the schedule does it -- owners before the workforce tracking that reads
+what they refreshed, everything before the alerts that judge it -- so after it
+finishes every page shows what the schedule would have shown.
+"""
 
 from django.core.management.base import BaseCommand
 
-from holdfast.core import alerts, esi_sync
+from holdfast import tasks
+from holdfast.app_settings import HOLDFAST_PLANET_RESOLVE_PER_RUN
+from holdfast.core import alerts, den_sync, esi_sync
 from holdfast.core.scope import inactive_reason
-from holdfast.models import Owner
+from holdfast.models import DenCharacter, Owner
 
 
 class Command(BaseCommand):
-    help = "Sync all owners, refresh the public routes and evaluate alerts."
+    help = (
+        "Run every scheduled Holdfast job once, in the foreground: owners, den "
+        "characters, den slots, workforce, planets, cost indices, campaigns, "
+        "the sov map, raidable skyhooks, then alerts."
+    )
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -21,7 +33,16 @@ class Command(BaseCommand):
             ),
         )
         parser.add_argument("--skip-alerts", action="store_true")
-        parser.add_argument("--skip-public", action="store_true")
+        parser.add_argument(
+            "--skip-public",
+            action="store_true",
+            help="Skip the public routes: cost indices, campaigns, sov map, raidable.",
+        )
+        parser.add_argument(
+            "--skip-dens",
+            action="store_true",
+            help="Skip the den characters' ESI sync.",
+        )
         parser.add_argument(
             "--budget",
             type=int,
@@ -34,6 +55,41 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        self._owners(options)
+        if not options["skip_dens"]:
+            self._den_characters()
+
+        self._step("Den slots", den_sync.sync_den_slots)
+        self._step("Workforce tracking", den_sync.track_workforce_high_water)
+        self._step(
+            "Planet names",
+            lambda: esi_sync.resolve_pending_planets(HOLDFAST_PLANET_RESOLVE_PER_RUN),
+        )
+
+        if not options["skip_public"]:
+            self._step("System cost indices", esi_sync.update_system_costs)
+            self._step("Sovereignty campaigns", esi_sync.update_campaigns)
+            self._step("Public sovereignty map", esi_sync.update_sov_systems)
+            self._step(
+                "Raidable skyhooks",
+                lambda: len(esi_sync.refresh_raidable_skyhooks()),
+            )
+
+        if not options["skip_alerts"]:
+            self._step("Alerts", alerts.run_all_checks)
+
+    def _step(self, label, job):
+        """One job, reported; a failure is printed and the rest still run,
+        as one failing beat task leaves the others alone."""
+        self.stdout.write(f"{label} ...")
+        try:
+            result = job()
+        except Exception as exc:  # noqa: BLE001
+            self.stderr.write(self.style.ERROR(f"  failed: {type(exc).__name__}: {exc}"))
+            return
+        self.stdout.write(self.style.SUCCESS(f"  {result}"))
+
+    def _owners(self, options):
         owners = Owner.objects.active()
         if options["owner"]:
             # The debugging path: picked from every owner, with a warning
@@ -74,16 +130,27 @@ class Command(BaseCommand):
                     "  budget spent; the rest refreshes on following runs"
                 )
 
-        if not options["skip_public"]:
-            self.stdout.write("Refreshing public sovereignty map ...")
-            count = esi_sync.update_sov_systems()
-            self.stdout.write(self.style.SUCCESS(f"  {count} tracked system(s)"))
-
-            self.stdout.write("Refreshing raidable skyhooks ...")
-            rows = esi_sync.get_raidable_skyhooks(force_refresh=True)
-            self.stdout.write(self.style.SUCCESS(f"  {len(rows)} raidable"))
-
-        if not options["skip_alerts"]:
-            self.stdout.write("Evaluating alerts ...")
-            results = alerts.run_all_checks()
-            self.stdout.write(self.style.SUCCESS(f"  {results}"))
+    def _den_characters(self):
+        # Every enabled one, idle or not: the idle back-off spares the
+        # scheduled fan-out, and "sync now" means now. Not the characters of
+        # people who lost den access, which the fan-out skips too.
+        for den_character in tasks.den_characters_in_use(
+            DenCharacter.objects.filter(is_enabled=True).select_related(
+                "character_ownership__character"
+            )
+        ):
+            self.stdout.write(f"Syncing den character {den_character} ...")
+            try:
+                # The task body, run here: the same token and rate-limit
+                # handling, recorded on the character the same way.
+                stats = tasks.update_den_character(den_character.pk)
+            except Exception as exc:  # noqa: BLE001
+                self.stderr.write(self.style.ERROR(f"  failed: {type(exc).__name__}: {exc}"))
+                continue
+            if stats is None:
+                den_character.refresh_from_db()
+                self.stdout.write(
+                    self.style.WARNING(f"  not synced: {den_character.last_error}")
+                )
+            else:
+                self.stdout.write(self.style.SUCCESS(f"  {stats}"))

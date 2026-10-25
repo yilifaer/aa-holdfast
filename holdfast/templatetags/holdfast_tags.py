@@ -19,6 +19,15 @@ def holdfast_version():
 
 
 @register.filter
+def stranded(routes):
+    """The rows of a routing table whose alerts go nowhere.
+
+    See ``views.common.routes_for_section``, which marks them.
+    """
+    return [route for route in routes if getattr(route, "is_stranded", False)]
+
+
+@register.filter
 def relative_moment(value):
     """"in 2 days" or "3 hours ago", whichever way the moment points.
 

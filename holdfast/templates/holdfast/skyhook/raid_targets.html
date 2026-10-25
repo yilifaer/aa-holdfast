@@ -12,7 +12,9 @@
         </div>
     {% endif %}
 
-    {% if not entries %}
+    {% if fetching %}
+        <div class="holdfast-empty">{% translate "The list is being fetched from ESI. Reload the page in a minute." %}</div>
+    {% elif not entries %}
         <div class="holdfast-empty">{% translate "Nothing raidable right now." %}</div>
     {% else %}
         <div class="table-responsive">

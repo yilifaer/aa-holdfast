@@ -53,8 +53,15 @@ class _HoldfastMenu(MenuItemHook):
         return MenuItemHook.render(self, request)
 
 
+def _sov_entry_visible(user) -> bool:
+    # The Tokens page belongs to no section and this entry is the one it
+    # lights, so it is also the way in for someone who only registers
+    # corporation tokens; the SOV home sends them on to it.
+    return sov_can_enter(user) or user.has_perm("holdfast.manage_owners")
+
+
 class SovMenu(_HoldfastMenu):
-    predicate = staticmethod(sov_can_enter)
+    predicate = staticmethod(_sov_entry_visible)
     counter = staticmethod(attention.sov_count)
 
     def __init__(self):

@@ -4,6 +4,154 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses
 [semantic versioning](https://semver.org/).
 
+## [0.1.12] - unreleased
+
+### Fixed
+
+- **A routed category whose webhooks were all deleted or switched off went to
+  every enabled webhook**, so deleting the leadership channel's webhook sent
+  leadership alerts to every channel. A category somebody routed now stays
+  routed (`AlertRoute.is_routed`): with no working channel it goes nowhere, the
+  section's settings page and the Webhooks page list it in red, and deleting or
+  switching off its last webhook says which alerts stop. Saving a settings page
+  whose row shows nothing ticked, because its webhooks were deleted, no longer
+  widens it either; *every enabled webhook instead* does that on purpose. A
+  category nobody has routed still goes to every enabled webhook. The upgrade
+  marks every route that ticks a webhook today, so one routed only to a
+  switched-off webhook stops falling back from now on.
+- **A webhook Discord answers 404 or 401 was retried every run, for good.**
+  Deleted in Discord or with its token reset, it never comes back, so it now
+  switches itself off with the reason and time on the Webhooks page, logs one
+  warning naming any category left with no channel, and is not posted to again;
+  ticking Enabled again clears the reason. *Send test* reports it. 429 and 5xx
+  stay transient and are retried on the next run. A URL changed while the
+  refused post was on its way is left on: the answer was about the old one.
+- **A den attack alert Discord never took was retried forever.** Once older
+  than `HOLDFAST_DEN_NOTIFICATION_MAX_AGE_HOURS` (never longer than the alert
+  log prune) it is given up on and logged: "there is still a window to help" is
+  not true a day later. This also stops a pending event outliving the prune of
+  its bell key and ringing the owner's bell a second time.
+- **Linking an alt through charlink replaced its corporation's token.** With
+  `manage_owners`, linking any character in an already registered corporation
+  made it that corporation's token character, and an alt without the Station
+  Manager role then 403'd every sync. charlink now registers a corporation
+  only when it has none (or its character was unlinked), and otherwise says
+  which character it is registered with and that switching is done on the
+  Tokens page. It also only uses a character linked to the requesting user.
+- **charlink registered a den character for a user without den access.** A
+  `manage_owners` holder with no den permission got one, synced once and then
+  left enabled and never synced again, since the den sync skips such users
+  and the Tokens page would not have added it. charlink registers only the
+  corporation for them now, and shows the character as linked by that.
+- **Saving a section's settings before any webhook existed switched off every
+  alert category of that section.** The page leaves the routing table out
+  until there is a webhook, so the save posted no switches; once webhooks were
+  added, nothing of that section went anywhere, with no warning. A save from a
+  page that did not show the table leaves routing alone.
+- **The test paths called a refusal from Discord "no channel".** The section
+  settings pages' *Send test alerts* and `holdfast_test_alerts` now say per
+  category which webhook refused it, or was switched off because Discord says
+  it is gone, or could not be reached -- and "no channel" only when there is
+  none. `holdfast_test_webhook` reports each webhook instead of "Sent." when
+  any one of them took it, and the Webhooks page's *Send test* tells a refusal
+  from an unreachable Discord.
+- **An Auth notification that failed was recorded as rung**, so a den owner's
+  bell for that attack or reinforcement never rang. It is tried again on the
+  next run.
+- **A failed post that was not a network error was logged by class name
+  only.** Network errors still are, since their text carries the URL; anything
+  else is logged with its traceback.
+- **The README's install check missed `eveuniverse` added by its AppConfig
+  path** (`eveuniverse.apps.EveUniverseConfig`), and added it a second time.
+- **Any section manager could read every webhook URL.** The Webhooks page and
+  Django admin show a saved URL only masked
+  (`https://discord.com/api/webhooks/1234…/…abcd`); an empty field keeps it and
+  a new one replaces it.
+- **Django admin saved any webhook URL at all.** It uses the Webhooks page's
+  form now, so only Discord's webhook endpoint is accepted there too.
+- **The den officers' operator directory listed every registered character on
+  the install**, which with charlink is every member's alts mapped to their
+  main, other alliances' included, and people who had left. It lists only the
+  people running a den or holding a pending or approved claim on the ground
+  the officer sees, and only while they still have den access. Timers'
+  *everyone* view is limited to that ground too (an officer's own dens stay).
+  The page no longer runs queries per character or creates a contact row for
+  every operator on each view; the den information page no longer creates one
+  either.
+- **Characters of people who lost den access were still polled.**
+  The scheduled den sync and `holdfast_update` skip them; their records stay
+  and syncing resumes if access returns.
+- **A user with only `manage_owners` had no way to reach the Tokens page.** The
+  SOV Monitor entry shows for them and leads there.
+- **A claim's status could be changed in Django admin**, skipping the member's
+  notification and the rest of the queue. It is read-only there, with a note
+  pointing to the den admin page.
+- **Two runs of the same task could overlap.** A `run_alerts` that outlived
+  its ten minutes ran beside the next one and could post an alert twice, and
+  registering a corporation twice queued two syncs of it. Every task is now
+  queued once through Auth's `QueueOnce` (per owner and per den character for
+  the per-object syncs), and the long ones have a time limit.
+- **Raid Targets called ESI inside the page request** whenever its cache had
+  expired, which with a five-minute cache under a ten-minute refresh was
+  routine: an ESI error was a 500, and a 304 an empty list. The page only reads
+  what `refresh_raidable` stored; the task keeps and re-stores the list on a
+  304, and before the first fetch the page says the list is being fetched and
+  queues one.
+- **A registration that had been saved could answer 500.** With the broker
+  down, queueing the first sync raised after the rows were written: Tokens,
+  den character registration, the SOV settings save and charlink all showed a
+  failure for something that had worked, and a slot claim lost the claim
+  itself. The rows are saved first, the error is logged, and the page says the
+  first sync runs with the next scheduled one.
+- **Low ADM, unpowered upgrades and other standing alerts repeated every 14
+  days**, when the alert log prune re-armed them. A row is pruned only once it
+  can no longer stop anything: what it was about is gone, or the hub, theft
+  window, operation or attack has moved on.
+- **A den claim was deleted with its slot**, which goes whenever its skyhook
+  drops out of a listing. Claims now outlive their slot and keep the planet
+  and system name (migration 0016 names the existing ones); one still pending
+  is closed by the next slot sync, since nobody can decide it.
+
+### Changed
+
+- Every module logs through Auth's `get_extension_logger`, so Holdfast's lines
+  land in `extensions.log` with the other apps' (AA checklist 2.3).
+- `holdfast_update` runs every scheduled job, as "sync now" promised: owners,
+  den characters (idle ones too), den slots, workforce tracking, planet names,
+  cost indices, campaigns, the sov map, raidable skyhooks, then alerts. A step
+  that fails is reported and the rest still run.
+- No Holdfast model has Django's add/change/delete/view permissions any more:
+  84 rows nobody checked, cluttering the group permission picker. Migration
+  0015 deletes the existing ones (Holdfast's own content types only), grants
+  included; superusers keep all of Django admin.
+- `manage_owners` reads "Can register and switch corporation tokens"; den
+  characters never needed it.
+- Den notifications, which carry the attacker's character, corporation and
+  alliance ids, are deleted after `HOLDFAST_DEN_EVENT_RETENTION_DAYS` (default
+  30) by the daily prune, and are not read back in from ESI after that. An
+  operator's first sync, which announces only the last
+  `HOLDFAST_DEN_FIRST_SYNC_GRACE_MINUTES`, is told apart by when their
+  notifications were first read (`DenCharacter.notifications_synced_at`,
+  migration 0017, which marks everyone already synced) rather than by whether
+  any event is left -- or the prune made a quiet operator new again, and an
+  attack read a few hours late was filed as already alerted.
+- The unused `notify_permission_holders` helper is gone.
+- `HOLDFAST_RAIDABLE_CACHE_SECONDS` defaults to 1800, three times the refresh
+  schedule; an override below ten minutes leaves the page saying the list is
+  being fetched.
+- `allianceauth>=5.2,<6` and `django-esi>=9.10,<11`. Python 3.13 is in CI and
+  the classifiers.
+
+### Added
+
+- `holdfast_update --skip-dens`.
+- `HOLDFAST_DEN_EVENT_RETENTION_DAYS`.
+- README sections on the developer application's scopes, charlink, data
+  protection, upgrading, uninstalling (schedule rows first, so nothing runs
+  against dropped tables), and the design choices behind the single-alliance
+  scope, fetching ESI directly, and corporation tokens that keep syncing after
+  their registrant loses `manage_owners`.
+
 ## [0.1.11] - 2026-10-23
 
 Fixes from running the AA app checklist

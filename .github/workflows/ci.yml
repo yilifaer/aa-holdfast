@@ -11,7 +11,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        # No excludes needed: AA 5.2.0 and 5.4.0 declare 3.13 (>=3.10,<3.15),
+        # and everything they pull in has 3.13 wheels or a pure-Python sdist,
+        # bar mysqlclient, which builds from source on every leg alike.
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
         # Every Alliance Auth line we promise to run on: 5.2 and 5.4 pinned
         # with the django-esi 9.10 they shipped alongside, and "latest" --
         # whatever pip resolves today, which is how a new install gets it.

@@ -24,17 +24,22 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Games/Entertainment",
     "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
 ]
 dependencies = [
-    "allianceauth>=5.2",         # 5.2, 5.4 and latest are what CI installs
+    # 5.2, 5.4 and latest are what CI installs. The floor is real: migration
+    # 0001 depends on Auth's authentication 0026, first shipped in 5.2.
+    "allianceauth>=5.2,<6",
     # Alliance Auth 5.2 leaves this open, and django-sri 1.0 (Python 3.11+,
     # September 2026) drops the sri_static tag that AA 5.2's own base template
     # uses -- every page 500s. AA pins <1 from 5.4; this carries the pin back
     # to 5.2 so a fresh install there does not break on a dependency of ours.
     "django-sri<1",
-    "django-esi>=9.10",          # compatibility-date support
+    # 9.10 is the oldest line CI tests (AA 5.2 and 5.4 shipped with it); 10.x
+    # is what AA 5.5 brings. 11 is a new major nobody has run this against.
+    "django-esi>=9.10,<11",
     "django-eveuniverse>=2.0",   # 0001 depends on its migration 0012
     "dhooks-lite>=1.1",
     # Notification bodies are YAML, anchors and all. Alliance Auth happens to

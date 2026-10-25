@@ -19,13 +19,17 @@ New tactical op      MTO route, ``state == Available``      Carries the expiry
 ===================  ====================================  =====================
 """
 
-import logging
 import re
 from datetime import timedelta
 
+from allianceauth.services.hooks import get_extension_logger
 from dhooks_lite import Field
 from django.utils import timezone
 
+from ..app_settings import (
+    HOLDFAST_DEN_NOTIFICATION_MAX_AGE_HOURS,
+    HOLDFAST_STALE_PRUNE_DAYS,
+)
 from ..models import (
     AlertCategory,
     DenEvent,
@@ -48,7 +52,7 @@ from .alerts import (
 from .den_sync import parse_notification_body
 from .notifications import invalidate_badges, notify_user
 
-logger = logging.getLogger(__name__)
+logger = get_extension_logger(__name__)
 
 
 def _strip_markup(value):
@@ -58,9 +62,34 @@ def _strip_markup(value):
     return re.sub(r"<[^>]+>", "", str(value)).strip()
 
 
+def _give_up_on_old_attacks() -> None:
+    """Stop retrying attack alerts Discord never took, once they are old.
+
+    The post says there is still a window to help, which a day later is not
+    true. And an event left pending outlived the AlertLog prune of its bell
+    key and rang the owner's bell a second time. The horizon is the
+    notification age limit, never longer than the prune, so a pending event
+    always still has its bell key.
+    """
+    hours = min(HOLDFAST_DEN_NOTIFICATION_MAX_AGE_HOURS, HOLDFAST_STALE_PRUNE_DAYS * 24)
+    given_up = DenEvent.objects.filter(
+        is_alerted=False,
+        kind=DenEvent.Kind.ATTACKED,
+        timestamp__lt=timezone.now() - timedelta(hours=hours),
+    ).update(is_alerted=True)
+    if given_up:
+        logger.warning(
+            "Gave up on %s den attack alert(s) older than %s h that never reached "
+            "Discord",
+            given_up,
+            hours,
+        )
+
+
 def check_den_attacks() -> int:
     """Post the one thing only notifications can tell us: it is being shot."""
     sent = 0
+    _give_up_on_old_attacks()
     pending = DenEvent.objects.filter(
         is_alerted=False, kind=DenEvent.Kind.ATTACKED
     ).select_related("den__eve_planet", "den__eve_solar_system", "den_character")
@@ -123,20 +152,21 @@ def check_den_attacks() -> int:
         # The operator hears about their own den through Auth's bell too, so
         # it is waiting for them next login even if they missed the channel.
         # Once per event, whatever became of the Discord post: the event stays
-        # pending until Discord takes it, and ringing on every retry rang the
-        # bell every ten minutes for as long as Discord was off or unreachable.
+        # pending until Discord takes it or it ages out, and ringing on every
+        # retry rang the bell every ten minutes for as long as Discord was off
+        # or unreachable. Rung means notify_user said so: a bell that failed
+        # and was recorded anyway would never ring at all.
         bell = f"bell:denattack:{event.notification_id}"
-        if not _already_sent(bell):
-            notify_user(
-                event.den_character.user,
-                title=f"Your mercenary den is under attack: {where}",
-                message=(
-                    f"A den at {where} was being shot at "
-                    f"{event.timestamp:%Y-%m-%d %H:%M} EVE. It was not reinforced "
-                    "at the time, so there may still be a window to save it."
-                ),
-                level="danger",
-            )
+        if not _already_sent(bell) and notify_user(
+            event.den_character.user,
+            title=f"Your mercenary den is under attack: {where}",
+            message=(
+                f"A den at {where} was being shot at "
+                f"{event.timestamp:%Y-%m-%d %H:%M} EVE. It was not reinforced "
+                "at the time, so there may still be a window to save it."
+            ),
+            level="danger",
+        ):
             _mark_sent(bell)
             invalidate_badges(event.den_character.user)
 
@@ -190,21 +220,20 @@ def check_den_reinforced() -> int:
             category=AlertCategory.DEN_REINFORCED,
         )
         # Once per reinforcement, as for attacks; it re-arms when the den
-        # comes out.
-        if not _already_sent(bell):
-            notify_user(
-                den.den_character.user,
-                title=f"Your mercenary den is reinforced: {den.planet_name}",
-                message=(
-                    f"{den.planet_name} in {den.system_name} is reinforced."
-                    + (
-                        f" It comes out at {den.reinforce_end:%Y-%m-%d %H:%M} EVE."
-                        if den.reinforce_end
-                        else ""
-                    )
-                ),
-                level="danger",
-            )
+        # comes out. Only once it has actually rung.
+        if not _already_sent(bell) and notify_user(
+            den.den_character.user,
+            title=f"Your mercenary den is reinforced: {den.planet_name}",
+            message=(
+                f"{den.planet_name} in {den.system_name} is reinforced."
+                + (
+                    f" It comes out at {den.reinforce_end:%Y-%m-%d %H:%M} EVE."
+                    if den.reinforce_end
+                    else ""
+                )
+            ),
+            level="danger",
+        ):
             _mark_sent(bell)
             invalidate_badges(den.den_character.user)
 

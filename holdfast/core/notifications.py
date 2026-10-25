@@ -9,11 +9,9 @@ Everything here is best-effort: a notification failing must never take a sync
 task or a form submission down with it.
 """
 
-import logging
+from allianceauth.services.hooks import get_extension_logger
 
-from django.contrib.auth.models import Permission, User
-
-logger = logging.getLogger(__name__)
+logger = get_extension_logger(__name__)
 
 
 def notify_user(user, title, message, level="info") -> bool:
@@ -28,43 +26,6 @@ def notify_user(user, title, message, level="info") -> bool:
     except Exception:  # noqa: BLE001
         logger.exception("Could not notify %s", user)
         return False
-
-
-def notify_permission_holders(codename, title, message, level="info") -> int:
-    """Notify everyone who holds one of our permissions.
-
-    Used for alliance-level events -- a hub about to go dry, a den siphoning
-    our workforce -- so the people responsible see it even if they never open
-    Discord.
-    """
-    try:
-        permission = Permission.objects.get(
-            content_type__app_label="holdfast", codename=codename
-        )
-    except Permission.DoesNotExist:
-        logger.warning("Permission holdfast.%s does not exist", codename)
-        return 0
-
-    users = (
-        User.objects.filter(
-            # Either granted directly or through a group. Superusers are
-            # deliberately excluded: they hold every permission on the site and
-            # would otherwise be notified about every app's business.
-            models_q(permission)
-        )
-        .distinct()
-    )
-    sent = 0
-    for user in users:
-        if notify_user(user, title, message, level):
-            sent += 1
-    return sent
-
-
-def models_q(permission):
-    from django.db.models import Q
-
-    return Q(user_permissions=permission) | Q(groups__permissions=permission)
 
 
 def invalidate_badges(user):

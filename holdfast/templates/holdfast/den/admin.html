@@ -60,7 +60,7 @@
                 <tbody>
                     {% for claim in pending_claims %}
                         <tr>
-                            <td>{{ claim.slot.planet_name }}</td>
+                            <td>{{ claim.planet_name }}</td>
                             <td>{{ claim.user.username }}</td>
                             <td>{{ claim.character.character_name }}</td>
                             <td class="holdfast-sub">{{ claim.created_at|date:"Y-m-d H:i" }} UTC</td>

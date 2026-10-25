@@ -232,8 +232,8 @@ class WebhookFlowTests(TestCase):
 
     def test_the_section_settings_pages_survive_deleting_a_routed_webhook(self):
         """Routing rows point at webhooks. Deleting one must drop it from the
-        routes and leave every settings page renderable, with the category
-        falling back to every enabled webhook as the routing page promises."""
+        routes and leave every settings page renderable; where the category
+        goes then is test_routing's business."""
         hook = Webhook.objects.create(name="ops", url=URL)
         route = AlertRoute.for_category(AlertCategory.SOV_FUEL)
         route.webhooks.set([hook])
@@ -293,3 +293,123 @@ class WebhookTestButtonTests(TestCase):
             response = self.client.post(reverse("holdfast:webhook_test", args=[self.hook.pk]))
         self.assertRedirects(response, reverse("holdfast:webhooks"))
         self.assertEqual(notes_of(response)[0][0], "error")
+
+
+SECRET_URL = (
+    "https://discord.com/api/webhooks/123456789012345678/"
+    "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-secretTOKENpart_wxyz"
+)
+TOKEN = SECRET_URL.rsplit("/", 1)[1]
+MASKED = "https://discord.com/api/webhooks/1234…/…wxyz"
+
+
+class WebhookUrlSecrecyTests(TestCase):
+    """The URL is the webhook's password: whoever holds it can post to the
+    channel as Holdfast. Any section manager manages webhooks, so a den
+    manager could read the leadership channel's URL off the edit form. A
+    saved URL now never goes back to a browser in full; leaving the field
+    empty keeps it, and typing a new one replaces it."""
+
+    def setUp(self):
+        self.client.force_login(user_with("manager", "den_manage"))
+        self.hook = Webhook.objects.create(name="leadership", url=SECRET_URL)
+
+    def _edit(self, **data):
+        return self.client.post(
+            reverse("holdfast:webhook_edit", args=[self.hook.pk]),
+            {"name": "leadership", "ping_type": Webhook.PingType.NONE, "is_enabled": "on", **data},
+        )
+
+    def test_the_mask_keeps_the_id_prefix_and_the_last_four_of_the_token(self):
+        self.assertEqual(self.hook.masked_url, MASKED)
+
+    def test_a_url_that_is_not_a_discord_webhook_shows_its_host_only(self):
+        """One saved through Django admin before admin checked the URL."""
+        self.assertEqual(
+            Webhook(url="https://example.com/hooks/secret-path").masked_url,
+            "https://example.com/…",
+        )
+
+    def test_a_short_token_shows_none_of_itself(self):
+        self.assertEqual(
+            Webhook(url="https://discord.com/api/webhooks/1/x").masked_url,
+            "https://discord.com/api/webhooks/1…/…",
+        )
+
+    def test_neither_the_list_nor_the_edit_form_shows_the_token(self):
+        for page in (
+            reverse("holdfast:webhooks"),
+            reverse("holdfast:webhook_edit", args=[self.hook.pk]),
+        ):
+            with self.subTest(page=page):
+                response = self.client.get(page)
+                self.assertEqual(response.status_code, 200)
+                self.assertNotContains(response, TOKEN)
+                self.assertNotContains(response, TOKEN[:-4])
+                self.assertContains(response, MASKED)
+
+    def test_saving_with_the_field_left_empty_keeps_the_stored_url(self):
+        response = self._edit(url="", notes="renamed nothing, kept the URL")
+        self.assertRedirects(response, reverse("holdfast:webhooks"))
+        self.hook.refresh_from_db()
+        self.assertEqual(self.hook.url, SECRET_URL)
+        self.assertEqual(self.hook.notes, "renamed nothing, kept the URL")
+
+    def test_a_new_url_replaces_it(self):
+        self._edit(url="https://discord.com/api/webhooks/2/new-token")
+        self.hook.refresh_from_db()
+        self.assertEqual(self.hook.url, "https://discord.com/api/webhooks/2/new-token")
+
+    def test_a_new_url_is_still_checked(self):
+        response = self._edit(url="https://example.com/api/webhooks/2/y")
+        self.assertIn("url", response.context["form"].errors)
+        self.hook.refresh_from_db()
+        self.assertEqual(self.hook.url, SECRET_URL)
+
+    def test_a_new_webhook_still_needs_one(self):
+        response = self.client.post(reverse("holdfast:webhook_add"), {"name": "ops", "url": ""})
+        self.assertIn("url", response.context["form"].errors)
+        self.assertFalse(Webhook.objects.filter(name="ops").exists())
+
+
+class WebhookAdminTests(TestCase):
+    """Django admin used a plain form: no Discord check, and the URL in
+    full. It uses the same rules as the Webhooks page now."""
+
+    def setUp(self):
+        from django.contrib import admin
+        from django.test import RequestFactory
+
+        self.root = User.objects.create_superuser("root", "root@example.invalid", "x")
+        self.model_admin = admin.site._registry[Webhook]
+        self.request = RequestFactory().get("/admin/")
+        self.request.user = self.root
+        self.hook = Webhook.objects.create(name="leadership", url=SECRET_URL)
+
+    def _form(self, instance=None, **data):
+        form_class = self.model_admin.get_form(self.request, instance)
+        if not data:
+            return form_class(instance=instance)
+        base = {"name": "ops", "ping_type": Webhook.PingType.NONE, "is_enabled": "on", "notes": ""}
+        return form_class(data={**base, **data}, instance=instance)
+
+    def test_admin_refuses_a_url_that_is_not_discord_s(self):
+        form = self._form(url="http://127.0.0.1:9/internal")
+        self.assertFalse(form.is_valid())
+        self.assertIn("url", form.errors)
+
+    def test_admin_accepts_a_discord_webhook(self):
+        form = self._form(url="https://discord.com/api/webhooks/2/y")
+        self.assertTrue(form.is_valid(), form.errors)
+
+    def test_admin_never_renders_the_saved_url(self):
+        rendered = str(self._form(instance=self.hook))
+        self.assertNotIn(TOKEN, rendered)
+        self.assertIn(MASKED, rendered)
+
+    def test_admin_keeps_the_stored_url_when_the_field_is_left_empty(self):
+        form = self._form(instance=self.hook, name="leadership", url="")
+        self.assertTrue(form.is_valid(), form.errors)
+        form.save()
+        self.hook.refresh_from_db()
+        self.assertEqual(self.hook.url, SECRET_URL)

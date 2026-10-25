@@ -1,15 +1,25 @@
 """Celery tasks.
 
-The corporation structure routes are cached by CCP for a full hour and are
-event-based, so syncing an owner more often than hourly returns byte-identical
-data and only burns the 300-per-15-minutes rate limit. The public routes are on
-a five minute cache and are cheap, so they run more often.
+The corporation structure routes are cached by CCP for an hour, so the two
+listings an owner sync pulls return the same data for most runs. The sync
+still runs every fifteen minutes because of the detail calls: each run spends
+a fixed budget on the stalest structures, and four runs an hour is what
+rotates a large corporation through a full detail refresh inside the hour
+CCP caches them for. The listings cost four tokens a run of that; see the
+rate limiting section of the README.
+
+Every task is queued once (Alliance Auth's QueueOnce): the lock is taken when
+the task is queued and dropped when the run ends, so a slow run never has a
+second copy of itself running beside it. Each lock expires before the task's
+next scheduled run, so one left behind by a killed worker costs one run, and
+each time limit leaves the lock enough room to cover the run.
 """
 
-import logging
 import random
 from datetime import timedelta
 
+from allianceauth.services.hooks import get_extension_logger
+from allianceauth.services.tasks import QueueOnce
 from celery import shared_task
 from django.db.models import Q
 from django.utils import timezone
@@ -22,12 +32,52 @@ from .app_settings import (
 )
 from .core import alerts, den_sync, esi_sync
 from .core.scope import inactive_reason
-from .models import AlertLog, DenCharacter, Owner
+from .models import DenCharacter, Owner
 
-logger = logging.getLogger(__name__)
+logger = get_extension_logger(__name__)
+
+MINUTE = 60
 
 
-@shared_task
+def _once(timeout_minutes, keys=None):
+    """QueueOnce options: drop a second dispatch quietly, lock for this long.
+
+    graceful is spelled out although Auth's QueueOnce sets it: Auth sets it
+    by mutating celery_once's shared class dict, and a task's own ``once``
+    replaces that dict rather than adding to it.
+    """
+    options = {"graceful": True, "timeout": timeout_minutes * MINUTE}
+    if keys:
+        options["keys"] = keys
+    return options
+
+
+def enqueue(task, *args) -> bool:
+    """Queue a task from a web request, without letting the broker fail it.
+
+    The caller has already saved what the user asked for, and a 500 would
+    tell them it was lost. A task that cannot be queued now runs with its
+    next scheduled sync, so this logs, says False, and lets the view tell
+    the user so. A dispatch dropped because the task is already queued
+    counts as queued: it is.
+    """
+    try:
+        task.delay(*args)
+    except Exception:  # noqa: BLE001 - kombu, redis and socket errors alike
+        logger.exception(
+            "Could not queue %s%s; it runs with the next scheduled sync", task.name, args
+        )
+        # QueueOnce takes its lock before handing the task to the broker.
+        # Left behind, it would turn away the next scheduled run as well.
+        try:
+            task.once_backend.clear_lock(task.get_key(args, {}))
+        except Exception:  # noqa: BLE001 - the cache may be what is down
+            logger.warning("Could not release the queue lock of %s", task.name)
+        return False
+    return True
+
+
+@shared_task(base=QueueOnce, once=_once(5), time_limit=2 * MINUTE)
 def update_all_owners():
     """Kick off a sync for every active owner, spread over a few minutes."""
     owners = list(Owner.objects.active())
@@ -42,7 +92,9 @@ def update_all_owners():
     return len(owners)
 
 
-@shared_task
+@shared_task(
+    base=QueueOnce, once=_once(14, keys=["owner_pk"]), time_limit=10 * MINUTE
+)
 def update_owner(owner_pk):
     """Refresh one corporation's hubs and skyhooks."""
     try:
@@ -101,7 +153,7 @@ def update_owner(owner_pk):
     return stats
 
 
-@shared_task
+@shared_task(base=QueueOnce, once=_once(14), time_limit=10 * MINUTE)
 def update_sov_map():
     """Refresh the public ADM board for tracked alliances."""
     count = esi_sync.update_sov_systems()
@@ -109,15 +161,15 @@ def update_sov_map():
     return count
 
 
-@shared_task
+@shared_task(base=QueueOnce, once=_once(9), time_limit=5 * MINUTE)
 def refresh_raidable():
-    """Warm the raidable-skyhook cache so the dashboard never waits on ESI."""
-    rows = esi_sync.get_raidable_skyhooks(force_refresh=True)
+    """Store the public raidable list; the Raid Targets page only reads it."""
+    rows = esi_sync.refresh_raidable_skyhooks()
     logger.info("Raidable skyhooks: %s", len(rows))
     return len(rows)
 
 
-@shared_task
+@shared_task(base=QueueOnce, once=_once(9), time_limit=8 * MINUTE)
 def run_alerts():
     """Evaluate every alert rule and post what fires."""
     results = alerts.run_all_checks()
@@ -127,17 +179,33 @@ def run_alerts():
     return results
 
 
-@shared_task
+@shared_task(base=QueueOnce, once=_once(60), time_limit=30 * MINUTE)
 def prune_alert_log():
-    """Drop alert-log rows old enough that they can never suppress anything."""
+    """Daily housekeeping: the alert log, and den notifications past retention.
+
+    An alert log row is what stops an alert repeating, so age alone is no
+    reason to drop one: pruning a row whose condition still held re-armed
+    the alert, and a low ADM was announced again every fourteen days. A row
+    older than HOLDFAST_STALE_PRUNE_DAYS goes only once it can no longer stop
+    anything -- see ``alerts.prune_alert_log`` for the rule per kind.
+
+    Den notifications hold the attacker's character, corporation and
+    alliance ids, people with no account here, and go after
+    HOLDFAST_DEN_EVENT_RETENTION_DAYS whatever their state.
+
+    The name stays: an install's beat schedule refers to it.
+    """
     cutoff = timezone.now() - timedelta(days=HOLDFAST_STALE_PRUNE_DAYS)
-    deleted, _ = AlertLog.objects.filter(sent_at__lt=cutoff).delete()
-    if deleted:
-        logger.info("Pruned %s alert log row(s)", deleted)
-    return deleted
+    stats = {
+        "alert_log": alerts.prune_alert_log(cutoff),
+        "den_events": den_sync.prune_den_events(),
+    }
+    if any(stats.values()):
+        logger.info("Pruned %s", stats)
+    return stats
 
 
-@shared_task
+@shared_task(base=QueueOnce, once=_once(5), time_limit=2 * MINUTE)
 def update_all_den_characters():
     """Refresh every registered den operator, spread over a few minutes.
 
@@ -145,11 +213,10 @@ def update_all_den_characters():
     idle_until passes; see DenCharacter.idle_until.
     """
     now = timezone.now()
-    characters = list(
-        DenCharacter.objects.filter(is_enabled=True).filter(
-            Q(idle_until__isnull=True) | Q(idle_until__lte=now)
-        )
+    due = DenCharacter.objects.filter(is_enabled=True).filter(
+        Q(idle_until__isnull=True) | Q(idle_until__lte=now)
     )
+    characters = den_characters_in_use(due)
     idle = DenCharacter.objects.filter(is_enabled=True, idle_until__gt=now).count()
     if not characters:
         logger.info("No den characters due (%s idle)", idle)
@@ -162,7 +229,25 @@ def update_all_den_characters():
     return len(characters)
 
 
-@shared_task
+def den_characters_in_use(den_characters):
+    """The den characters whose user may still open the den section.
+
+    Someone who left the alliance, or dropped to a state without den access,
+    stops being polled: their token would otherwise keep reading their
+    notifications for an alliance they are no longer in. Their rows are kept,
+    not deleted -- dens, events and claim history stay for the officers, and
+    somebody who comes back is polled again without registering anew.
+    """
+    from .views.common import den_entrant_ids
+
+    characters = list(den_characters.select_related("character_ownership"))
+    allowed = den_entrant_ids({c.character_ownership.user_id for c in characters})
+    return [c for c in characters if c.character_ownership.user_id in allowed]
+
+
+@shared_task(
+    base=QueueOnce, once=_once(18, keys=["den_character_pk"]), time_limit=10 * MINUTE
+)
 def update_den_character(den_character_pk):
     """Refresh one operator's dens, tactical operations and notifications."""
     try:
@@ -196,7 +281,7 @@ def update_den_character(den_character_pk):
     return stats
 
 
-@shared_task
+@shared_task(base=QueueOnce, once=_once(30), time_limit=10 * MINUTE)
 def sync_den_slots():
     """Keep the slot list in step with our temperate-planet skyhooks."""
     stats = den_sync.sync_den_slots()
@@ -204,7 +289,7 @@ def sync_den_slots():
     return stats
 
 
-@shared_task
+@shared_task(base=QueueOnce, once=_once(14), time_limit=5 * MINUTE)
 def track_workforce():
     """Update workforce high-water marks used for siphon detection."""
     stats = den_sync.track_workforce_high_water()
@@ -213,7 +298,7 @@ def track_workforce():
     return stats
 
 
-@shared_task
+@shared_task(base=QueueOnce, once=_once(14), time_limit=10 * MINUTE)
 def resolve_planets():
     """Put names to skyhook planets a batch at a time.
 
@@ -226,7 +311,7 @@ def resolve_planets():
     return stats
 
 
-@shared_task
+@shared_task(base=QueueOnce, once=_once(30), time_limit=10 * MINUTE)
 def update_system_costs():
     """Refresh industry cost indices for systems our alliances hold."""
     count = esi_sync.update_system_costs()
@@ -234,7 +319,7 @@ def update_system_costs():
     return count
 
 
-@shared_task
+@shared_task(base=QueueOnce, once=_once(4), time_limit=3 * MINUTE)
 def update_campaigns():
     """Refresh Entosis campaigns -- our only public "is it reinforced" signal."""
     count = esi_sync.update_campaigns()

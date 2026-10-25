@@ -14,7 +14,7 @@ from unittest import mock
 
 from allianceauth.authentication.models import CharacterOwnership
 from allianceauth.eveonline.models import EveCharacter
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Permission, User
 from django.test import SimpleTestCase, TestCase
 from django.utils import timezone
 
@@ -28,6 +28,10 @@ HOOK = pathlib.Path(__file__).resolve().parent.parent / "thirdparty" / "charlink
 
 def _den_character(tag):
     user = User.objects.create_user(f"idle_{tag}")
+    # The fan-out polls only people who may still use dens.
+    user.user_permissions.add(
+        Permission.objects.get(content_type__app_label="holdfast", codename="basic_access")
+    )
     character = EveCharacter.objects.create(
         character_id=96_000_000 + tag,
         character_name=f"Idle {tag}",

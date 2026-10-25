@@ -6,9 +6,9 @@ of display objects, and a short per-user cache so a burst of page loads costs
 one round of queries rather than one per request.
 """
 
-import logging
 from datetime import timedelta
 
+from allianceauth.services.hooks import get_extension_logger
 from django.core.cache import cache
 from django.db.models import Q
 from django.utils import timezone
@@ -30,7 +30,7 @@ from ..models import (
     SovSystem,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_extension_logger(__name__)
 
 CACHE_SECONDS = 60
 

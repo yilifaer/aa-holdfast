@@ -73,8 +73,42 @@ def den_can_claim(user) -> bool:
     return den_can_see_list(user)
 
 
+DEN_ENTER = ("basic_access", "den_member", "den_officer", "den_manage")
+
+
 def den_can_enter(user) -> bool:
-    return _any_perm(user, "basic_access", "den_member", "den_officer", "den_manage")
+    return _any_perm(user, *DEN_ENTER)
+
+
+def den_entrant_ids(user_ids) -> set:
+    """Which of these users pass ``den_can_enter``, in one query.
+
+    For lists of people -- the operator directory, the den fan-out -- where
+    asking ``has_perm`` of each costs three queries a person. It answers the
+    way Auth's StateBackend does: an active user holding one of the
+    permissions directly, through a group or through their state, or a
+    superuser. A test holds it to ``den_can_enter``.
+    """
+    from django.contrib.auth.models import Permission, User
+
+    # Keys, not a queryset: Auth's State relates to its own proxy of
+    # Permission.
+    permissions = list(
+        Permission.objects.filter(
+            content_type__app_label="holdfast", codename__in=DEN_ENTER
+        ).values_list("pk", flat=True)
+    )
+    return set(
+        User.objects.filter(pk__in=list(user_ids), is_active=True)
+        .filter(
+            Q(is_superuser=True)
+            | Q(user_permissions__in=permissions)
+            | Q(groups__permissions__in=permissions)
+            | Q(profile__state__permissions__in=permissions)
+        )
+        .values_list("pk", flat=True)
+        .distinct()
+    )
 
 
 def require_any(*codenames):
@@ -208,6 +242,7 @@ def routes_for_section(section):
     a settings page that only lists what somebody already touched is useless
     the first time you open it.
     """
+    from ..core.alerts import route_channels
     from ..models import CATEGORY_SECTIONS, AlertCategory, AlertRoute
 
     rows = []
@@ -215,25 +250,71 @@ def routes_for_section(section):
         if CATEGORY_SECTIONS.get(category) != section:
             continue
         route = AlertRoute.for_category(category)
+        # For the form: routed, and nothing left that works.
+        route.is_stranded = route.is_enabled and route_channels(route) == []
         rows.append(route)
     return rows
+
+
+def report_test_results(request, results) -> None:
+    """Say what a section's Send test alerts did, category by category.
+
+    "No channel, or switched off" covered everything that did not arrive,
+    including a channel Discord refused or had just been switched off for --
+    which sent people to the routing table when the webhook was the problem.
+    """
+    from django.contrib import messages
+
+    delivered = [name for name, delivery in results.items() if delivery.sent]
+    failed = [
+        f"{name} ({'; '.join(delivery.failures)})"
+        for name, delivery in results.items()
+        if delivery.failures
+    ]
+    if delivered:
+        messages.success(
+            request, f"Sent {len(delivered)} test alert(s): {', '.join(delivered)}"
+        )
+    if failed:
+        messages.warning(request, f"Not sent: {', '.join(failed)}")
+
+
+# Rendered only beside the routing table, which the settings pages leave out
+# while no webhook exists. A form without it carried no routing at all.
+ROUTING_SHOWN = "routing_shown"
 
 
 def save_routes(request, section):
     """Apply the routing part of a settings form.
 
-    A category with nothing ticked falls back to every enabled webhook, which
-    is spelled out on the form -- silence is the failure nobody notices.
+    A category nobody has routed goes to every enabled webhook -- silence is
+    the failure nobody notices. Ticking a channel routes it; unticking every
+    channel it had, or choosing "every enabled webhook", unroutes it. What
+    does not unroute it is a row that shows nothing ticked because its
+    webhooks were deleted: saving the page to change a fuel band must not
+    quietly send leadership alerts to every channel.
+
+    Nor does a form that never showed the routing table change anything. The
+    page leaves the table out while no webhook exists, so a fresh install
+    saving its tracked alliance posted no switches -- and every category of
+    the section was switched off before its first webhook was ever added.
     """
     from ..models import Webhook
 
+    if ROUTING_SHOWN not in request.POST:
+        return
     webhook_ids = {str(w.pk) for w in Webhook.objects.all()}
     for route in routes_for_section(section):
-        route.is_enabled = request.POST.get(f"route_enabled_{route.category}") == "on"
-        route.save(update_fields=["is_enabled"])
+        had_ticks = route.webhooks.exists()
         chosen = [
             value
             for value in request.POST.getlist(f"route_webhooks_{route.category}")
             if value in webhook_ids
         ]
+        route.is_enabled = request.POST.get(f"route_enabled_{route.category}") == "on"
+        if chosen:
+            route.is_routed = True
+        elif had_ticks or request.POST.get(f"route_all_{route.category}") == "on":
+            route.is_routed = False
+        route.save(update_fields=["is_enabled", "is_routed"])
         route.webhooks.set(chosen)

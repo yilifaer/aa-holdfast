@@ -1,0 +1,21 @@
+{% comment %}
+Categories that were routed and have no working channel left. Included by the
+routing table and by the Webhooks page; ``stranded`` is a list of AlertRoute.
+{% endcomment %}
+{% load i18n %}
+
+{% if stranded %}
+    <div class="alert alert-danger py-2 holdfast-sub">
+        <p class="mb-1">
+            {% blocktranslate count counter=stranded|length %}This alert has no working channel and goes nowhere: every webhook it was routed to was deleted or switched off.{% plural %}These alerts have no working channel and go nowhere: every webhook they were routed to was deleted or switched off.{% endblocktranslate %}
+            {% translate "Route each to a working webhook on its section's settings page, switch its webhook back on, or send it to every enabled webhook there." %}
+        </p>
+        <ul class="mb-0">
+            {% for route in stranded %}
+                <li>
+                    {% if route.section == "sov" %}<a href="{% url 'holdfast:sov_settings' %}">{% elif route.section == "skyhook" %}<a href="{% url 'holdfast:skyhook_settings' %}">{% else %}<a href="{% url 'holdfast:den_settings' %}">{% endif %}{{ route.get_category_display }}</a>
+                </li>
+            {% endfor %}
+        </ul>
+    </div>
+{% endif %}

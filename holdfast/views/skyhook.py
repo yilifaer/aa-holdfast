@@ -8,9 +8,11 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 from eveuniverse.models import EvePlanet, EveSolarSystem
 
-from ..core.esi_sync import get_raidable_skyhooks
+from ..core.esi_sync import cached_raidable_skyhooks
 from ..models import HoldfastConfig, ReagentThreshold, Webhook
+from ..tasks import enqueue, refresh_raidable
 from .common import (
+    report_test_results,
     require_any,
     routes_for_section,
     save_routes,
@@ -185,8 +187,18 @@ def timers(request):
 
 @require_any(*SKYHOOK_ANY)
 def raid_targets(request):
-    """The public raidable list, with real planet names instead of raw IDs."""
-    rows = get_raidable_skyhooks()
+    """The public raidable list, with real planet names instead of raw IDs.
+
+    Read from what refresh_raidable stored, never fetched here. Before the
+    first refresh, or after a long ESI outage, the page says the list is
+    being fetched and queues a refresh; QueueOnce keeps a page full of
+    readers from queueing more than one.
+    """
+    rows = cached_raidable_skyhooks()
+    fetching = rows is None
+    if fetching:
+        enqueue(refresh_raidable)
+        rows = []
     now = timezone.now()
 
     planet_ids = [r.get("planet_id") for r in rows if r.get("planet_id")]
@@ -233,7 +245,9 @@ def raid_targets(request):
     return render(
         request,
         "holdfast/skyhook/raid_targets.html",
-        _context(request, entries=entries, now=now, unresolved=unresolved),
+        _context(
+            request, entries=entries, now=now, unresolved=unresolved, fetching=fetching
+        ),
     )
 
 
@@ -333,16 +347,5 @@ def settings_test(request):
     """
     from ..core.alerts import send_test_for_section
 
-    results = send_test_for_section("skyhook")
-    delivered = [name for name, ok in results.items() if ok]
-    skipped = [name for name, ok in results.items() if not ok]
-    if delivered:
-        messages.success(
-            request, f"Sent {len(delivered)} test alert(s): {', '.join(delivered)}"
-        )
-    if skipped:
-        messages.warning(
-            request,
-            f"Not sent (no channel, or switched off): {', '.join(skipped)}",
-        )
+    report_test_results(request, send_test_for_section("skyhook"))
     return redirect("holdfast:skyhook_settings")

@@ -28,8 +28,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         if options["category"]:
-            ok = send_test(options["category"])
-            self._report(options["category"], ok)
+            self._report(options["category"], send_test(options["category"]))
             return
 
         sections = (
@@ -39,16 +38,18 @@ class Command(BaseCommand):
         )
         for section in sections:
             self.stdout.write(f"--- {section} ---")
-            for category, ok in send_test_for_section(section).items():
-                self._report(category, ok)
+            for category, delivery in send_test_for_section(section).items():
+                self._report(category, delivery)
 
-    def _report(self, category, ok):
-        if ok:
+    def _report(self, category, delivery):
+        # "No channel configured" covered a refusal from Discord too, which
+        # sent people to the routing table when the webhook was the problem.
+        why = "; ".join(delivery.failures)
+        if delivery.sent and not why:
             self.stdout.write(self.style.SUCCESS(f"  sent     {category}"))
+        elif delivery.sent:
+            self.stdout.write(self.style.WARNING(f"  partly   {category} ({why})"))
+        elif delivery.outcomes:
+            self.stdout.write(self.style.ERROR(f"  failed   {category} ({why})"))
         else:
-            self.stdout.write(
-                self.style.WARNING(
-                    f"  skipped  {category} "
-                    "(no channel configured, or the category or section is switched off)"
-                )
-            )
+            self.stdout.write(self.style.WARNING(f"  skipped  {category} ({why})"))

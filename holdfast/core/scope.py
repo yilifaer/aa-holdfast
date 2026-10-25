@@ -12,15 +12,14 @@ This module imports only the models and settings, so the views can use it
 without dragging the ESI client into every page load.
 """
 
-import logging
-
 from allianceauth.eveonline.models import EveAllianceInfo
+from allianceauth.services.hooks import get_extension_logger
 from django.db.models import Q
 
 from ..app_settings import HOLDFAST_TRACK_EXTRA_ALLIANCE_IDS
 from ..models import HoldfastConfig
 
-logger = logging.getLogger(__name__)
+logger = get_extension_logger(__name__)
 
 NOT_SET_LABEL = "(not set -- the first registered corporation decides)"
 
