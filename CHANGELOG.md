@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses
 [semantic versioning](https://semver.org/).
 
+## [0.1.13] - unreleased
+
+### Fixed
+
+- **0.1.12 took Holdfast off the CharLink page.** Its "already linked" check
+  was written as a `Case` of two `Exists`, and charlink accepts only a single
+  `Exists`: it refused the whole entry ("Hook import: failed to validate").
+  It is one `Exists` again, with the same answer -- a den character, or the
+  token of a registered corporation. The tests' charlink stand-in now makes
+  the same checks charlink does, so this cannot pass CI again.
+
 ## [0.1.12] - 2026-10-25
 
 ### Fixed

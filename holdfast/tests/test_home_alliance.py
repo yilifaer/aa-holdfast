@@ -14,6 +14,7 @@ mostly on the shape that hid the bug: a second alliance.
 
 import importlib
 import inspect
+import re
 import sys
 import types
 from datetime import timedelta
@@ -803,6 +804,26 @@ def _load_charlink_hook():
     class LoginImport:
         def __init__(self, **kwargs):
             self.__dict__.update(kwargs)
+            self.validate()
+
+        def validate(self):
+            # The checks charlink's own LoginImport.validate() makes
+            # (charlink/app_imports/utils.py). A stub that accepted anything
+            # let 0.1.12 ship an annotation charlink refuses, which took the
+            # entry off every CharLink page.
+            from django.db.models import Exists
+
+            assert isinstance(self.app_label, str)
+            assert isinstance(self.unique_id, str)
+            assert re.match(r"^[a-zA-Z0-9]+$", self.unique_id) is not None
+            assert isinstance(str(self.field_label), str)
+            assert callable(self.add_character)
+            assert isinstance(self.scopes, list)
+            assert callable(self.check_permissions)
+            assert callable(self.is_character_added)
+            assert isinstance(self.is_character_added_annotation, Exists)
+            assert callable(self.get_users_with_perms)
+            assert isinstance(self.default_initial_selection, bool)
 
     class AppImport:
         def __init__(self, *args, **kwargs):

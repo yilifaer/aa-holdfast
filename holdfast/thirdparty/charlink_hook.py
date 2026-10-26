@@ -18,7 +18,7 @@ from allianceauth.eveonline.models import EveCharacter, EveCorporationInfo
 from charlink.app_imports.utils import AppImport, LoginImport
 from charlink.utils import users_with_permissions
 from django.contrib import messages
-from django.db.models import BooleanField, Case, Exists, OuterRef, Value, When
+from django.db.models import Exists, OuterRef, Q
 
 from ..app_settings import HOLDFAST_DEN_ESI_SCOPES, HOLDFAST_ESI_SCOPES
 from ..core.scope import registration_refusal
@@ -57,18 +57,19 @@ def _added(character: EveCharacter) -> bool:
     )
 
 
-# The same answer, for charlink's list of every character.
-_ADDED_ANNOTATION = Case(
-    When(
-        Exists(DenCharacter.objects.filter(character_ownership__character_id=OuterRef("pk"))),
-        then=Value(True),
-    ),
-    When(
-        Exists(Owner.objects.filter(character_ownership__character_id=OuterRef("pk"))),
-        then=Value(True),
-    ),
-    default=Value(False),
-    output_field=BooleanField(),
+# The same answer, for charlink's list of every character. It has to be one
+# Exists: charlink's validation asserts the type and drops the whole entry
+# from the CharLink page otherwise. Owner's link to the ownership has no
+# reverse accessor, hence the subquery for that half.
+_ADDED_ANNOTATION = Exists(
+    CharacterOwnership.objects.filter(character_id=OuterRef("pk")).filter(
+        Q(holdfast_den_character__isnull=False)
+        | Q(
+            pk__in=Owner.objects.filter(character_ownership__isnull=False).values(
+                "character_ownership_id"
+            )
+        )
+    )
 )
 
 
