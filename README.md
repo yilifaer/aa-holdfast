@@ -324,8 +324,10 @@ where it used to be about an hour and a quarter. Skyhook workforce is the one
 figure that matters for siphon detection; `workforce_drop_grace_hours` is
 unaffected (it reads the database) but its resolution is now about an hour. If
 you would rather have no top-up, remove it in `local.py` with
-`CELERYBEAT_SCHEDULE.pop("holdfast_top_up_owner_details")` — a large
-corporation then rotates a quarter as fast.
+`CELERYBEAT_SCHEDULE.pop("holdfast_top_up_owner_details")` **and** disable or
+delete the `holdfast_top_up_owner_details` periodic task in the admin (beat
+keeps its schedule in the database, so the row stays after the restart) — a
+large corporation then rotates a quarter as fast.
 
 With `allianceauth-corptools` installed, sovereignty hub details cost no
 detail calls at all when corptools' copy is recent (see Design notes), and that
