@@ -4,6 +4,59 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses
 [semantic versioning](https://semver.org/).
 
+## [0.1.14] - 2026-11-19
+
+### Added
+
+- **The den dashboard says when a den has knocked a sovereignty upgrade
+  offline.** Officers get one row per system where a den is taking workforce
+  while an upgrade there is unpowered, naming the upgrades and the likely den
+  -- what the den admin page already showed. An operator whose own den is
+  doing it is told so on their own row, with how many upgrades are down.
+- **Every row under "Across the alliance" has a time.** A siphon shows how long
+  it has been running, an upgrade how long it has been offline, claims how long
+  the oldest has waited. These read "for 3 hours" with the start in EVE time,
+  so they are not mistaken for deadlines. Siphons and outages already under way
+  take their start from Holdfast's first alert about them; with no alert on
+  record they show no time until they clear.
+- **With allianceauth-corptools installed, Holdfast reads what corptools already
+  fetched** -- sovereignty hub details, and each operator's dens and tactical
+  operations -- instead of asking ESI again, as long as corptools' copy is
+  recent (hubs 20 to 90 minutes old, so details have had time to be written,
+  dens 100, operations 45), not older than Holdfast's own last read, and
+  -- for a hub -- with reagent details no older than the ones Holdfast holds
+  (on equal times, upgrade states that agree with Holdfast's ESI reading). A hub
+  is still read from ESI at least every 3 hours, since corptools' hub time
+  belongs to its hub list, not to the details. Otherwise it calls ESI as before. Skyhooks,
+  structure listings, den notifications and the public routes are always
+  fetched by Holdfast. Without corptools nothing changes.
+
+### Changed
+
+- **The corporation sync runs hourly instead of every 15 minutes.** CCP caches
+  these routes for an hour, so a structure refreshed in the last 50 minutes is
+  no longer fetched again. A corporation with more structures than one run's
+  budget is topped up at :22, :37 and :52, so it rotates as fast as before; a
+  small one makes a quarter of the calls, and its data can be up to about two
+  hours old rather than about an hour and a quarter.
+- With corptools, a den's reinforcement can reach Discord up to about 100
+  minutes after it happens rather than about 20, and a den anchored since
+  corptools last looked can take as long to appear. Attack alerts still come
+  from the in-game notifications Holdfast reads every 20 minutes.
+- Unpowered upgrades next to a siphon are now looked for in every hub of the
+  alliance in that system, not only the skyhook owner's (den admin page, siphon
+  and upgrade alerts).
+
+### Upgrading
+
+- Run `migrate`: 0018 adds four columns (two start times, two corptools
+  bookkeeping times) and fills in the start times from the alert log.
+- If `local.py` merges `holdfast.schedule`, nothing else to do. If it lists the
+  tasks by hand, change `holdfast_update_all_owners` to `crontab(minute=7)` and
+  add `holdfast_top_up_owner_details` (`holdfast.tasks.top_up_all_owners`,
+  `crontab(minute="22,37,52")`); without the top-up, a corporation larger than
+  one run's budget rotates four times slower.
+
 ## [0.1.13] - 2026-10-26
 
 ### Fixed

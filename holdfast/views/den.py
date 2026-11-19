@@ -20,6 +20,7 @@ from esi.decorators import token_required
 
 from ..app_settings import HOLDFAST_DEN_ESI_SCOPES
 from ..core.notifications import invalidate_badges, notify_user
+from ..core.siphon import starved_upgrades_in_system
 from ..models import (
     TIMEZONE_CHOICES,
     DenCharacter,
@@ -47,6 +48,8 @@ from .common import (
     require_any,
     routes_for_section,
     save_routes,
+    sort_dashboard_items,
+    visible_owners,
     visible_slots,
 )
 
@@ -116,10 +119,15 @@ def dashboard(request):
         percent, taken, _certainty = (
             skyhook.siphon_estimate if skyhook else (None, None, None)
         )
+        # An upgrade knocked offline by this is the part the operator most
+        # needs to hear. It is a count and nothing more: the sovereignty pages
+        # are not theirs to read, so what is down stays with the officers.
+        starved = starved_upgrades_in_system(skyhook) if skyhook else []
         items.append(
             {
-                "severity": "warning",
-                "when": None,
+                "severity": "danger" if starved else "warning",
+                "when": skyhook.siphon_since if skyhook else None,
+                "since": True,
                 "kind": "Your den is taking our own workforce",
                 "where": den.planet_name,
                 "system": den.system_name,
@@ -129,6 +137,12 @@ def dashboard(request):
                         f"{percent:.0f}% of this skyhook, {taken:,} a cycle"
                         if percent and taken
                         else "the skyhook under it is losing output"
+                    )
+                    + (
+                        f" -- {len(starved)} sovereignty upgrade(s) in this"
+                        " system went offline, likely because of it"
+                        if starved
+                        else ""
                     )
                 ),
             }
@@ -143,6 +157,7 @@ def dashboard(request):
             {
                 "severity": "critical",
                 "when": event.timestamp,
+                "since": True,
                 "kind": "Your den was attacked",
                 "where": event.den.planet_name if event.den else "unknown planet",
                 "system": event.den.system_name if event.den else None,
@@ -196,12 +211,14 @@ def dashboard(request):
                     {
                         "severity": "warning",
                         "when": claim.decided_at if claim else None,
+                        "since": True,
                         "kind": "Approved but nothing anchored",
                         "where": slot.planet_name,
                         "system": slot.system_name,
                         "detail": claim.character.character_name if claim else "",
                     }
                 )
+        siphoned_by_system = {}
         for skyhook in Skyhook.objects.filter(
             Q(workforce_siphon_percent__isnull=False)
             | Q(workforce_dropped_at__isnull=False),
@@ -210,6 +227,10 @@ def dashboard(request):
             percent, taken, certainty = skyhook.siphon_estimate
             if percent is None:
                 continue
+            if skyhook.eve_solar_system_id is not None:
+                siphoned_by_system.setdefault(skyhook.eve_solar_system_id, []).append(
+                    skyhook
+                )
             slot = skyhook.den_slot
             holder = slot.holder_name if slot else None
             officer_items.append(
@@ -217,7 +238,8 @@ def dashboard(request):
                     # A den we know about is a conversation; an unexplained
                     # one might be someone else's.
                     "severity": "warning" if holder else "danger",
-                    "when": None,
+                    "when": skyhook.siphon_since,
+                    "since": True,
                     "kind": "Den siphoning our workforce",
                     "where": skyhook.planet_name,
                     "system": skyhook.system_name,
@@ -228,25 +250,64 @@ def dashboard(request):
                     ),
                 }
             )
-        pending = DenClaim.objects.filter(
+        # "Rig offline": a sovereignty upgrade that went dark while a den is
+        # taking workforce in the same system. One row per system, so the
+        # outage keeps its own start time instead of borrowing the siphon's.
+        # Shown whatever ``notify_den_sov_impact`` says -- that switch decides
+        # what goes to Discord, and the den admin page shows the same thing
+        # unconditionally.
+        owners = visible_owners(request.user)
+        for hooks in siphoned_by_system.values():
+            starved = starved_upgrades_in_system(hooks[0], owners=owners)
+            if not starved:
+                continue
+            system_name = hooks[0].system_name
+            officer_items.append(
+                {
+                    "severity": "danger",
+                    "when": min(
+                        (u.low_since for u in starved if u.low_since), default=None
+                    ),
+                    "since": True,
+                    "kind": "Sovereignty upgrade offline"
+                    if len(starved) == 1
+                    else f"{len(starved)} sovereignty upgrades offline",
+                    "where": system_name,
+                    "system": system_name,
+                    "detail": ", ".join(u.type_name for u in starved)
+                    + " -- likely a den taking workforce at "
+                    + ", ".join(
+                        f"{s.planet_name} ({s.siphon_estimate[0]:.0f}%)" for s in hooks
+                    ),
+                }
+            )
+        pending_claims = DenClaim.objects.filter(
             slot__in=slots, status=DenClaim.Status.PENDING
-        ).count()
+        )
+        pending = pending_claims.count()
         if pending:
+            oldest = (
+                pending_claims.select_related("character", "slot__skyhook__eve_planet")
+                .order_by("created_at")
+                .first()
+            )
             officer_items.append(
                 {
                     "severity": "info",
-                    "when": None,
+                    "when": oldest.created_at,
+                    "since": True,
                     "kind": f"{pending} claim(s) awaiting a decision",
                     "where": "Den admin",
                     "system": None,
-                    "detail": "",
+                    "detail": (
+                        f"oldest: {oldest.character.character_name}"
+                        f" for {oldest.slot.planet_name}"
+                    ),
                 }
             )
 
-    order = {"critical": 0, "danger": 1, "warning": 2, "info": 3}
-    far = now + timedelta(days=3650)
     for bucket in (items, officer_items):
-        bucket.sort(key=lambda i: (order.get(i["severity"], 9), i["when"] or far))
+        sort_dashboard_items(bucket, now)
 
     return render(
         request,
@@ -428,15 +489,9 @@ def admin_page(request):
     # A siphon only matters to sovereignty once it actually knocks something
     # out, so flag the systems where both things are true at once.
     sov_impacted = []
+    owners = visible_owners(request.user)
     for skyhook in siphoned:
-        starved = [
-            upgrade
-            for hub in skyhook.owner.sov_hubs.filter(
-                solar_system_id=skyhook.eve_solar_system_id
-            )
-            for upgrade in hub.upgrades.all()
-            if upgrade.power_state == "Low"
-        ]
+        starved = starved_upgrades_in_system(skyhook, owners=owners)
         if starved:
             sov_impacted.append({"skyhook": skyhook, "upgrades": starved})
 

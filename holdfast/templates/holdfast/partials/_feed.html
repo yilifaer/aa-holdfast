@@ -15,8 +15,14 @@ dashboards read identically: severity, when, where, what, detail.
             <div class="holdfast-item holdfast-item--{{ item.severity }}">
                 <div class="holdfast-item__when">
                     {% if item.when %}
-                        <div class="holdfast-item__when-relative">{{ item.when|relative_moment }}</div>
-                        <div>{{ item.when|date:"m-d H:i" }} EVE</div>
+                        {% if item.since %}
+                            {# Has been going on since then: not a deadline. #}
+                            <div class="holdfast-item__when-relative">{{ item.when|relative_moment:"since" }}</div>
+                            <div>{% translate "since" %} {{ item.when|date:"m-d H:i" }} EVE</div>
+                        {% else %}
+                            <div class="holdfast-item__when-relative">{{ item.when|relative_moment }}</div>
+                            <div>{{ item.when|date:"m-d H:i" }} EVE</div>
+                        {% endif %}
                     {% else %}&mdash;{% endif %}
                 </div>
                 <div class="holdfast-item__what">

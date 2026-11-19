@@ -1,12 +1,13 @@
 """Celery tasks.
 
-The corporation structure routes are cached by CCP for an hour, so the two
-listings an owner sync pulls return the same data for most runs. The sync
-still runs every fifteen minutes because of the detail calls: each run spends
-a fixed budget on the stalest structures, and four runs an hour is what
-rotates a large corporation through a full detail refresh inside the hour
-CCP caches them for. The listings cost four tokens a run of that; see the
-rate limiting section of the README.
+The corporation structure routes are cached by CCP for an hour, so the owner
+sync runs hourly: the two listings, plus a fixed budget of detail calls spent
+on the stalest structures. A structure refreshed in the last 50 minutes is not
+fetched again. A corporation with more structures than one budget covers is
+topped up at :22, :37 and :52 -- details only, no listings -- so a large one
+rotates as fast as it did when the whole sync ran every fifteen minutes, and a
+small one costs a quarter of the calls. See the rate limiting section of the
+README.
 
 Every task is queued once (Alliance Auth's QueueOnce): the lock is taken when
 the task is queued and dropped when the run ends, so a slow run never has a
@@ -92,11 +93,39 @@ def update_all_owners():
     return len(owners)
 
 
+@shared_task(base=QueueOnce, once=_once(5), time_limit=2 * MINUTE)
+def top_up_all_owners():
+    """Queue a details-only run for every owner with structures still due.
+
+    The hourly sync spends one budget; a corporation with more structures than
+    that has the rest waiting, and this is what keeps them from waiting an
+    hour each time. Owners with nothing due are not queued, so a small
+    corporation costs nothing here. Not wanted? Drop it from the beat schedule
+    (``CELERYBEAT_SCHEDULE.pop("holdfast_top_up_owner_details")``); big
+    corporations then rotate a quarter as fast.
+    """
+    due = [o for o in Owner.objects.active() if esi_sync.details_due_count(o)]
+    if not due:
+        return 0
+    jitter = max(HOLDFAST_OWNER_SYNC_JITTER_SECONDS, 0)
+    for owner in due:
+        countdown = random.randint(0, jitter) if jitter else 0
+        update_owner.apply_async(
+            args=[owner.pk], kwargs={"listings": False}, countdown=countdown
+        )
+    logger.info("Queued detail top-up for %s owner(s)", len(due))
+    return len(due)
+
+
 @shared_task(
     base=QueueOnce, once=_once(14, keys=["owner_pk"]), time_limit=10 * MINUTE
 )
-def update_owner(owner_pk):
-    """Refresh one corporation's hubs and skyhooks."""
+def update_owner(owner_pk, listings=True):
+    """Refresh one corporation's hubs and skyhooks.
+
+    ``listings=False`` is the top-up: details only, and nothing at all when
+    none are due.
+    """
     try:
         owner = Owner.objects.select_related("corporation__alliance").get(pk=owner_pk)
     except Owner.DoesNotExist:
@@ -113,8 +142,11 @@ def update_owner(owner_pk):
         owner.mark_sync(False, reason)
         return None
 
+    if not listings and not esi_sync.details_due_count(owner):
+        return None
+
     try:
-        stats = esi_sync.update_owner(owner)
+        stats = esi_sync.update_owner(owner, listings=listings)
     except Token.DoesNotExist as exc:
         # A revoked or never-registered token is a configuration problem, not
         # a fault. Raising made every 15-minute run log a task failure for as
@@ -142,13 +174,17 @@ def update_owner(owner_pk):
     owner.mark_sync(True, note)
 
     logger.info(
-        "%s: %s hub(s)/%s skyhook(s) known, refreshed %s/%s this run%s",
+        "%s: %s hub(s)/%s skyhook(s) known, refreshed %s/%s this run%s%s",
         owner,
         stats["sov_hubs"],
         stats["skyhooks"],
         stats["hub_details"] + stats["skyhook_details"],
         stats["sov_hubs"] + stats["skyhooks"],
         " (rate limited)" if stats["rate_limited"] else "",
+        # Only with corptools installed, so other installs log what they did.
+        f"; {stats['hubs_from_corptools']} hub(s) from corptools ({stats['corptools']})"
+        if "corptools" in stats
+        else "",
     )
     return stats
 

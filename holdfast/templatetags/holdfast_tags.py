@@ -28,16 +28,24 @@ def stranded(routes):
 
 
 @register.filter
-def relative_moment(value):
+def relative_moment(value, mode=""):
     """"in 2 days" or "3 hours ago", whichever way the moment points.
 
     Shown next to the absolute EVE time rather than instead of it: the
     relative figure is what someone reads at a glance, the absolute one is
     what they type into a fleet ping.
+
+    ``mode="since"`` is for something that has been going on -- a siphon, an
+    upgrade offline, a claim waiting. "3 hours ago" reads as a thing that
+    happened then; "for 3 hours" reads as how long it has lasted, and can
+    never be taken for a deadline. A start in the future (clock skew) is
+    shown as zero rather than as "in 2 hours".
     """
     if not value:
         return ""
     now = timezone.now()
+    if mode == "since":
+        return _("for %(delta)s") % {"delta": timesince(min(value, now), now)}
     if value >= now:
         return _("in %(delta)s") % {"delta": timeuntil(value, now)}
     return _("%(delta)s ago") % {"delta": timesince(value, now)}

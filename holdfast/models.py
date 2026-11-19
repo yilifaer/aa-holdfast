@@ -229,10 +229,22 @@ class SovHub(models.Model):
     fuel_expires_at = models.DateTimeField(null=True, blank=True, db_index=True)
 
     # last_seen_at: the listing confirmed it still exists.
-    # detail_updated_at: we actually spent a call pulling its details. Details
-    # rotate under a per-run budget, so these two drift apart on purpose.
+    # detail_updated_at: the details were refreshed, by an ESI call or from an
+    # allianceauth-corptools copy. Details rotate under a per-run budget, so
+    # these two drift apart on purpose.
     last_seen_at = models.DateTimeField(default=timezone.now, db_index=True)
     detail_updated_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    # When the details came from corptools, corptools' own update time for
+    # them; None when they came from ESI. corptools keeps no time per hub, so
+    # this is what stops an older copy from replacing a newer ESI reading, and
+    # a copy from being re-read when it has not changed. See
+    # thirdparty/corptools_source.py.
+    corptools_updated_at = models.DateTimeField(null=True, blank=True)
+    # When ESI itself last answered for this hub's details. corptools' time is
+    # that of its hub *list*, not of the details, so a detail task that keeps
+    # failing leaves a fresh-looking time over old data; this is the bound on
+    # how long such a copy can go unchecked (HUB_ESI_GAP).
+    esi_read_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         default_permissions = ()
@@ -344,6 +356,12 @@ class SovHubUpgrade(models.Model):
     power_state = models.CharField(
         max_length=16, choices=PowerState.choices, default=PowerState.UNSPECIFIED
     )
+    # When Holdfast first read this upgrade as Low, so the den dashboard can say
+    # how long it has been dark. Set by the sync on the Online -> Low edge,
+    # kept while it stays Low, cleared when it recovers. NULL for an outage
+    # that began before this column existed and has no alert on record (0018
+    # backfills from the alert log): "unknown" is more honest than a guess.
+    low_since = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         default_permissions = ()
@@ -408,6 +426,11 @@ class Skyhook(models.Model):
     # ever see it makes its own peak useless as a baseline.
     workforce_siphon_percent = models.FloatField(null=True, blank=True, db_index=True)
     workforce_base = models.BigIntegerField(null=True, blank=True)
+    # When the fingerprint first saw this skyhook siphoned. The fingerprint
+    # needs no history, so unlike ``workforce_dropped_at`` there is nothing to
+    # date it by except our own first reading. Kept while the siphon lasts
+    # (a change of rate does not restart it), cleared when it ends.
+    workforce_siphon_since = models.DateTimeField(null=True, blank=True)
 
     last_seen_at = models.DateTimeField(default=timezone.now, db_index=True)
     detail_updated_at = models.DateTimeField(null=True, blank=True, db_index=True)
@@ -505,6 +528,22 @@ class Skyhook(models.Model):
     def is_siphon_suspected(self) -> bool:
         """True when either mechanism has something to say."""
         return self.siphon_estimate[0] is not None
+
+    @property
+    def siphon_since(self):
+        """Since when the estimate has held, or None when we cannot say.
+
+        Each mechanism dates itself differently: the fingerprint by our first
+        reading of it, the peak comparison by the drop it was built on. A
+        siphon that began before either was recorded has no honest start, and
+        None is shown as a dash rather than as a made-up time.
+        """
+        certainty = self.siphon_estimate[2]
+        if certainty == "measured":
+            return self.workforce_siphon_since
+        if certainty in ("inferred", "suspected"):
+            return self.workforce_dropped_at
+        return None
 
     @property
     def workforce_shortfall(self):

@@ -22,7 +22,7 @@ import ast
 import pathlib
 import re
 
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, TestCase
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SECTIONS = ("sov", "skyhook", "den")
@@ -443,3 +443,27 @@ class LoggingTests(SimpleTestCase):
                 # Auth renames it back, so the log line names the module.
                 self.assertEqual(logger.name, name)
         self.assertGreater(found, 10)
+
+
+class MigrationsAreCompleteTests(TestCase):
+    """Every model change has its hand-written migration.
+
+    Migrations here are written by hand, so a field added to a model and
+    forgotten in 0018 is only noticed by ``deploy.sh`` on the Pi, in front of
+    the person doing the upgrade. ``makemigrations --check`` is that same check
+    run where it is cheap. A TestCase, not a SimpleTestCase: the command reads
+    the migration history table.
+    """
+
+    def test_no_model_change_is_missing_a_migration(self):
+        import io
+
+        from django.core.management import call_command
+
+        out = io.StringIO()
+        try:
+            call_command(
+                "makemigrations", "holdfast", "--check", "--dry-run", stdout=out
+            )
+        except SystemExit:
+            self.fail(f"holdfast has model changes without a migration: {out.getvalue()}")

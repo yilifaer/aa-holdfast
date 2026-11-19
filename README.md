@@ -52,8 +52,8 @@ this". Three things worth knowing:
   (`eveuniverse.apps.EveUniverseConfig`), hence the check above.
 - **No `eveuniverse` preload.** Types, systems and planets are fetched as they
   are first seen.
-- **11 scheduled tasks** come from `holdfast.schedule`. Merging the dict beats
-  pasting eleven entries: a missing one does not error, it silently removes a
+- **12 scheduled tasks** come from `holdfast.schedule`. Merging the dict beats
+  pasting twelve entries: a missing one does not error, it silently removes a
   feature. Retune one afterwards with
   `CELERYBEAT_SCHEDULE["holdfast_update_all_owners"]["schedule"] = crontab(...)`,
   or read [`holdfast/schedule.py`](https://github.com/yilifaer/aa-holdfast/blob/main/holdfast/schedule.py) for what each does.
@@ -224,6 +224,15 @@ loses den access (leaves, or drops to a state without it) leaves that list and
 their characters stop being polled; their records stay, and they pick up again
 if access comes back.
 
+The dashboard's "Across the alliance" list gives every row a time. A siphon, an
+upgrade that is down, or a claim waiting reads "for 3 hours" with the start in
+EVE time, so it is not mistaken for a deadline. When a den is taking workforce
+in a system where a sovereignty upgrade is unpowered, officers get a
+"Sovereignty upgrade offline" row naming the upgrades and the likely den; the
+operator whose own den is doing it is told on their own row how many upgrades
+are down, not which. Starts are dated from Holdfast's first reading (or its
+first alert, for ones already under way); with neither, the row shows a dash.
+
 Tactical operations on your own dens appear on the den dashboard and the
 sidebar badge, and are announced to Discord, once the den is at the anarchy
 level set on the den settings page — 2 by default, since below that nobody
@@ -273,7 +282,8 @@ names, cost indices, campaigns, the sov map, raidable skyhooks, then alerts. A
 step that fails is reported and the rest still run. `--owner PK` syncs one
 owner, even a disabled or out-of-scope one; `--skip-dens`, `--skip-public` (the
 four public routes) and `--skip-alerts` leave those parts out; `--budget` sets
-the detail calls per owner. Only the alert-log prune is left to beat.
+the detail calls per owner (structures refreshed in the last 50 minutes are
+skipped). Only the alert-log prune is left to beat.
 
 `holdfast_import_dens` takes `planet,owner,corporation,hostile` and records a
 den on each matching slot. Rows whose planet does not match are reported rather
@@ -289,14 +299,38 @@ and character together — and an Auth install has one ESI application, so that
 bucket is shared with `aa-structures` and `corptools` **on your own site**, not
 with anyone else's.
 
-Each run pulls both listings (they decide what exists) and spends
-`HOLDFAST_DETAIL_CALLS_PER_RUN` detail calls on whatever has gone longest
-without one. At the default 60 that is `60 x 2 + 2 x 2 = 124` tokens, 41% of the
-bucket, and a 150-structure corp refreshes fully in about 40 minutes — inside
-the hour CCP caches these routes anyway. That rotation is why the owner sync
-runs every 15 minutes: the listings change at most hourly, and most runs read
-the same two again for 4 tokens. Structures awaiting a first detail pull show
-as *queued*.
+The owner sync runs **hourly**, because CCP caches these routes for an hour and
+asking sooner only re-reads the same answer. Each run pulls both listings (they
+decide what exists) and spends `HOLDFAST_DETAIL_CALLS_PER_RUN` detail calls on
+whatever has gone longest without one, skipping any structure refreshed in the
+last 50 minutes. At the default 60 that is `60 x 2 + 2 x 2 = 124` tokens, 41%
+of the bucket, so one run stays under half of it.
+
+A corporation with more structures than one run covers would rotate four times
+slower on an hourly schedule, so a second task, `top_up_all_owners`, runs at
+:22, :37 and :52 and does the detail calls only (no listings), and only for
+owners that still have structures due. A big corporation therefore rotates as
+fast as it did when the whole sync ran every 15 minutes; a small one makes a
+quarter of the calls. Per corporation and hour, tokens spent on this bucket:
+
+| Structures | Before (every 15 min) | Now |
+|---|---|---|
+| 30 | 256 | 64 |
+| 150 | 496 | 304 |
+| 240 or more | 496 | about 484, same rotation |
+
+The price is age: a small corporation's data can be up to about two hours old,
+where it used to be about an hour and a quarter. Skyhook workforce is the one
+figure that matters for siphon detection; `workforce_drop_grace_hours` is
+unaffected (it reads the database) but its resolution is now about an hour. If
+you would rather have no top-up, remove it in `local.py` with
+`CELERYBEAT_SCHEDULE.pop("holdfast_top_up_owner_details")` — a large
+corporation then rotates a quarter as fast.
+
+With `allianceauth-corptools` installed, sovereignty hub details cost no
+detail calls at all when corptools' copy is recent (see Design notes), and that
+share of the budget goes to skyhooks. Structures awaiting a first detail pull
+show as *queued*.
 
 ## Settings
 
@@ -410,10 +444,27 @@ ESI tokens stay with django-esi, where other apps may use them.
   every registered corporation of the tracked alliance: fuel, timers and dens
   are run across corporations, so a corporation view would hide what the job
   needs. Separate audiences need separate Auths.
-- **ESI is fetched here, not read from corptools.** corptools needs a
-  corporation audit per corporation, syncs on its own cadence, and holds no
-  skyhooks, raidable list, sov map or campaigns, which would have to be fetched
-  here anyway.
+- **corptools is read when it is there, and never required.** With
+  `allianceauth-corptools` installed, Holdfast takes from its tables the
+  sovereignty hub details (with reagents and upgrades), each operator's
+  mercenary dens and their tactical operations, instead of asking ESI again.
+  It does so only for a corporation or character corptools audits, only while
+  corptools' copy is recent (hubs between 20 and 90 minutes, dens 100,
+  operations 45 — each its refresh interval plus slack; a hub is also read from
+  ESI itself at least every 3 hours, because corptools' hub time is that of its
+  hub list, not of the details under it), and never when the copy, or the
+  details in it, are older than what Holdfast already holds, or, on equal
+  times, when its upgrade states disagree with Holdfast's own ESI reading.
+  A value Holdfast does not recognise, a hub that looks half-written, or a
+  failed read sends only that hub, or that character, back to ESI; the sync log
+  says why. corptools holds no skyhooks, structure listings, den
+  notifications, raidable list, sov map or campaigns, so those are always
+  fetched here, and the notifications are what attack alerts are built on.
+  Holdfast reads corptools' tables without importing it and never changes them;
+  without corptools nothing changes at all. A den anchored after corptools last
+  looked can take up to about 100 minutes to appear, and with corptools a den's
+  reinforcement can reach Discord that much later; the attack alerts do not
+  depend on it.
 - **Django admin is for superusers.** It applies the Webhooks page's URL rules
   and shows a claim's status read-only. It still skips the Tokens page's
   alliance check — an owner outside the tracked alliance just sits unsynced —

@@ -16,21 +16,33 @@ stale with no way to tell which half.
 
 Instead each run does two things:
 
-1. Pull the two listings (2 calls). These are complete, so they are what
-   decides which structures exist -- creating stubs for new ones and deleting
-   ones that are gone.
+1. Pull the two listings (2 calls), on the hourly run. These are complete, so
+   they are what decides which structures exist -- creating stubs for new ones
+   and deleting ones that are gone.
 2. Spend a fixed detail-call budget on the structures whose details are
-   stalest, oldest first.
+   stalest, oldest first -- skipping any refreshed in the last
+   ``DETAIL_FRESH``, since CCP caches these routes for an hour and asking
+   again inside it returns the same answer.
 
-Structures therefore rotate through refresh. With the default budget and a
-15-minute schedule, every structure is refreshed comfortably inside the one
-hour that CCP caches these routes for anyway, at about 41% of the bucket --
+The run is hourly. A corporation too large for one budget is topped up at
+:22, :37 and :52 by ``tasks.top_up_all_owners``, which does only step 2 for
+whoever still has structures due, so a big corporation rotates as fast as it
+did when the whole sync ran every fifteen minutes and a small one costs a
+quarter of the calls. A single run still stays under half the bucket,
 leaving the rest for the other Auth modules using the same character.
+
+With allianceauth-corptools installed, sovereignty hub details are taken from
+its tables first when its copy is recent enough -- see
+``adopt_hubs_from_corptools``. Skyhooks are not stored by corptools and always
+come from ESI.
 """
+
+from datetime import timedelta
 
 from allianceauth.services.hooks import get_extension_logger
 from django.core.cache import cache
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from esi.exceptions import HTTPNotModified
 from eveuniverse.models import EvePlanet, EveSolarSystem, EveType
@@ -42,6 +54,7 @@ from ..app_settings import (
 )
 from ..models import (
     Owner,
+    PowerState,
     ReagentThreshold,
     Skyhook,
     SkyhookReagent,
@@ -53,12 +66,21 @@ from ..models import (
     SystemCostIndex,
 )
 from ..providers import esi
+from ..thirdparty import corptools_source
 from .scope import tracked_alliance_ids
-from .siphon import detect_siphon
+from .siphon import detect_siphon, siphon_since
 
 logger = get_extension_logger(__name__)
 
 RAIDABLE_CACHE_KEY = "holdfast_raidable_skyhooks"
+
+# A structure refreshed this recently is not fetched again. CCP caches the
+# structure routes for an hour, so asking inside that hour returns what we
+# already hold and still costs a token. Ten minutes short of the hour rather
+# than the full sixty: the fan-out adds up to two minutes of jitter and a run
+# takes a while, and a run that landed at 59 minutes would find nothing due,
+# then wait for the next one.
+DETAIL_FRESH = timedelta(minutes=50)
 
 try:  # django-esi raises this once a bucket is exhausted
     from esi.exceptions import ESIBucketLimitException
@@ -188,6 +210,23 @@ def sync_sov_hub_listing(owner: Owner, token, system_memo) -> int:
     return len(seen_ids)
 
 
+def _due(model, owner, now):
+    """The owner's rows whose details are older than ``DETAIL_FRESH``."""
+    return model.objects.filter(owner=owner).filter(
+        Q(detail_updated_at__isnull=True) | Q(detail_updated_at__lt=now - DETAIL_FRESH)
+    )
+
+
+def details_due_count(owner: Owner, now=None) -> int:
+    """How many of the owner's structures a detail refresh would still fetch.
+
+    Zero means a run has nothing to ask ESI for -- and, being a few indexed
+    counts, is how the top-up task decides whether to bother queueing one.
+    """
+    now = now or timezone.now()
+    return _due(SovHub, owner, now).count() + _due(Skyhook, owner, now).count()
+
+
 def refresh_details(owner: Owner, token, budget, type_memo):
     """Refresh whatever has gone longest without it, hub or skyhook alike.
 
@@ -202,14 +241,18 @@ def refresh_details(owner: Owner, token, budget, type_memo):
     every few runs on its own -- and an alliance with no skyhooks at all still
     spends its whole budget on hubs.
 
+    Only structures not refreshed within ``DETAIL_FRESH`` are queued; see
+    ``_due``.
+
     Returns ``(hubs refreshed, skyhooks refreshed)``.
     """
+    now = timezone.now()
     queue = sorted(
         [
             (row.detail_updated_at, index, kind, row)
             for index, (kind, row) in enumerate(
-                [("hub", h) for h in SovHub.objects.filter(owner=owner)]
-                + [("skyhook", s) for s in Skyhook.objects.filter(owner=owner)]
+                [("hub", h) for h in _due(SovHub, owner, now)]
+                + [("skyhook", s) for s in _due(Skyhook, owner, now)]
             )
         ],
         # Never fetched sorts before everything; the index keeps it stable.
@@ -240,14 +283,43 @@ def _fetch_sov_hub_detail(owner, token, hub, type_memo):
             sovereignty_hub_id=hub.hub_id,
             corporation_id=owner.corporation.corporation_id,
             token=token,
-        ).result()
+        ).result(
+            # Holdfast's ETag is its own, so a 304 only means "same as
+            # Holdfast's last read". When what is stored is a corptools copy
+            # that is not "same as what we hold", and treating it so would
+            # keep a stale copy and date it as an ESI reading. Force a body
+            # for those; a hub whose data came from ESI keeps the cheap 304.
+            force_refresh=hub.corptools_updated_at is not None
+        )
     except HTTPNotModified:
         # Unchanged since our last ETag; the call was still spent, so record
         # the visit or this hub would be picked first again forever.
-        SovHub.objects.filter(hub_id=hub.hub_id).update(detail_updated_at=timezone.now())
+        now = timezone.now()
+        if hub.corptools_updated_at is not None:
+            # Unreachable while force_refresh is set for these hubs. If it ever
+            # happens, the stored data is a corptools copy, so a 304 must not
+            # date it as an ESI reading.
+            logger.warning("Hub %s: 304 on a corptools copy; not recorded as an ESI read", hub.hub_id)
+            SovHub.objects.filter(hub_id=hub.hub_id).update(detail_updated_at=now)
+            return
+        SovHub.objects.filter(hub_id=hub.hub_id).update(detail_updated_at=now, esi_read_at=now)
         return
-    data = detail.model_dump()
+    _store_hub_detail(hub, detail.model_dump(), type_memo, observed_at=timezone.now())
 
+
+def _store_hub_detail(hub, data, type_memo, observed_at, corptools_updated_at=None):
+    """Write one hub's details, from ESI's shape of them.
+
+    ``corptools_updated_at`` is set when ``data`` was read out of
+    allianceauth-corptools rather than fetched, and is corptools' own time for
+    it; an ESI reading passes None and so clears it, which is how a later
+    corptools copy is compared against the newest reading of either kind.
+
+    Split out of the fetch so that what is stored is decided in one place.
+    ``observed_at`` is when the reading was taken: it dates the Low edge on an
+    upgrade (``low_since``), which is what the den dashboard shows as "offline
+    for 3 hours".
+    """
     resources = data.get("resources") or {}
     power = resources.get("power") or {}
     workforce = resources.get("workforce") or {}
@@ -266,6 +338,10 @@ def _fetch_sov_hub_detail(owner, token, hub, type_memo):
             fuel_access_list_id=data.get("fuel_access_list_id"),
             workforce_transport=_dump_transport(data.get("workforce_transport")),
             detail_updated_at=timezone.now(),
+            corptools_updated_at=corptools_updated_at,
+            # An ESI reading (no corptools time) restarts the clock that
+            # bounds how long corptools' copy may stand in for it.
+            **({"esi_read_at": timezone.now()} if corptools_updated_at is None else {}),
         )
         hub.refresh_from_db()
 
@@ -286,18 +362,31 @@ def _fetch_sov_hub_detail(owner, token, hub, type_memo):
             )
         hub.reagents.exclude(type_id__in=reagent_ids).delete()
 
+        # Read before writing: whether an upgrade was already Low decides if
+        # this reading starts the outage or continues one.
+        previous = {u.type_id: u for u in hub.upgrades.all()}
         upgrade_ids = []
         for upgrade in data.get("upgrades") or []:
             type_id = upgrade.get("type_id")
             if type_id is None:
                 continue
             upgrade_ids.append(type_id)
+            state = upgrade.get("power_state") or "Unspecified"
+            if state != PowerState.LOW:
+                low_since = None
+            elif type_id in previous and previous[type_id].power_state == PowerState.LOW:
+                # Still down. A NULL here is an outage from before the column
+                # existed and stays unknown; do not date it to now.
+                low_since = previous[type_id].low_since
+            else:
+                low_since = observed_at
             SovHubUpgrade.objects.update_or_create(
                 hub=hub,
                 type_id=type_id,
                 defaults={
                     "eve_type": _resolve_type(type_id, type_memo),
-                    "power_state": upgrade.get("power_state") or "Unspecified",
+                    "power_state": state,
+                    "low_since": low_since,
                 },
             )
         hub.upgrades.exclude(type_id__in=upgrade_ids).delete()
@@ -385,6 +474,14 @@ def _fetch_skyhook_detail(owner, token, skyhook, type_memo):
     # it was derived from.
     workforce = data.get("effective_workforce")
     siphon_percent, siphon_base = detect_siphon(workforce)
+    # ``skyhook`` is the row the queue picked, so it still holds the previous
+    # reading; the owner's lock keeps anyone else from writing in between.
+    siphon_started = siphon_since(
+        skyhook.workforce_siphon_percent,
+        skyhook.workforce_siphon_since,
+        siphon_percent,
+        timezone.now(),
+    )
 
     with transaction.atomic():
         Skyhook.objects.filter(skyhook_id=skyhook.skyhook_id).update(
@@ -392,6 +489,7 @@ def _fetch_skyhook_detail(owner, token, skyhook, type_memo):
             effective_workforce=workforce,
             workforce_siphon_percent=siphon_percent,
             workforce_base=siphon_base,
+            workforce_siphon_since=siphon_started,
             state=data.get("state") or "Unspecified",
             theft_start=theft.get("start"),
             theft_end=theft.get("end"),
@@ -493,14 +591,128 @@ def resolve_pending_planets(limit: int = 60) -> dict:
 # --------------------------------------------------------------------------
 
 
-def update_owner(owner: Owner, detail_budget: int = None) -> dict:
+def adopt_hubs_from_corptools(owner: Owner, type_memo, stats=None) -> set:
+    """Fill hub details from allianceauth-corptools where its copy will do.
+
+    Only hubs whose details are due are considered -- one refreshed inside
+    ``DETAIL_FRESH`` needs nothing from anywhere. A hub is taken from corptools
+    only when all of this holds, and otherwise is left for ESI, one hub at a
+    time:
+
+    * corptools audits this corporation and its copy is recent enough (see
+      ``corptools_source.HUB_MAX_AGE``);
+    * corptools has a row for it that passed validation (known power states,
+      every type resolved);
+    * ESI itself has read the hub within ``HUB_ESI_GAP``: corptools' time is
+      that of its hub list, so a failing detail task would otherwise leave
+      old data looking fresh for ever;
+    * the copy is not older than what we already hold. Without this a run
+      could take an Online reading from ESI and the next take an older Low
+      one from corptools, clearing and re-raising the upgrade alert;
+    * the row is not plausibly mid-write. corptools replaces a hub's reagents
+      and upgrades by deleting them and inserting new ones, outside a
+      transaction, so an empty list on its side where we hold some of that kind
+      means we read it between the two. Each list is judged on its own, since
+      the two are read by separate queries and either can be caught alone.
+
+    ``stats`` gains ``hubs_from_corptools`` and ``corptools`` (the reason, or
+    what was left to ESI) when corptools is installed, and stays untouched
+    when it is not, so an install without it logs exactly what it always did.
+    Returns the hub ids adopted.
+    """
+    now = timezone.now()
+    copies = corptools_source.hub_copies(owner, now)
+    if not copies.installed:
+        return set()
+    adopted: set = set()
+    left = {}
+    if copies.usable:
+        for hub in _due(SovHub, owner, now):
+            data = copies.rows.get(hub.hub_id)
+            if data is None:
+                left[hub.hub_id] = copies.rejected.get(hub.hub_id, "not in corptools")
+                continue
+            reason = _refuse_hub_copy(hub, data, copies.stamp, now)
+            if reason:
+                left[hub.hub_id] = reason
+                continue
+            # Always stored, even when the time is the one we took last: the
+            # time is the list's, and the details under it may have been
+            # rewritten since.
+            _store_hub_detail(
+                hub,
+                data,
+                type_memo,
+                observed_at=copies.stamp,
+                corptools_updated_at=copies.stamp,
+            )
+            adopted.add(hub.hub_id)
+    if stats is not None:
+        stats["hubs_from_corptools"] = len(adopted)
+        if not copies.usable:
+            stats["corptools"] = copies.reason
+        elif left:
+            stats["corptools"] = f"{len(left)} hub(s) left to ESI: {next(iter(left.values()))}"
+        else:
+            stats["corptools"] = "ok"
+    return adopted
+
+
+def _refuse_hub_copy(hub, data, stamp, now) -> str:
+    """Why this hub's corptools copy must not be used, or '' when it may."""
+    if data.get("solar_system_id") != hub.solar_system_id:
+        return "corptools has it in another system"
+    if hub.esi_read_at is None or now - hub.esi_read_at > corptools_source.HUB_ESI_GAP:
+        return "ESI has not read it recently"
+    if hub.corptools_updated_at is not None:
+        if stamp < hub.corptools_updated_at:
+            return "older than what Holdfast already holds"
+    elif hub.esi_read_at > stamp - corptools_source.HUB_SETTLE:
+        # What we hold is an ESI reading. The stamp is when corptools finished
+        # its hub *list*; the details come from separate tasks after it, and
+        # one that failed or is still queued leaves the old details under a new
+        # stamp. So a stamp is no evidence of newer details unless it is also
+        # a settle period past our read. Without this, a stale copy is adopted
+        # again right after ESI read fresher data, flips the hub back, and
+        # repeats the alert edges.
+        return "older than what Holdfast already holds"
+    # The detail-level time: the reagent bay's own last_updated, which corptools
+    # copies from the same ESI field Holdfast stores. A copy whose bay is older
+    # than ours has stale details whatever its list stamp says.
+    held = hub.reagent_bay_updated_at
+    if held is not None:
+        copy_bay = (data.get("reagent_bay") or {}).get("last_updated")
+        if copy_bay is None or copy_bay < held:
+            return "its details are older than what Holdfast already holds"
+        # CCP may not bump the bay time when fuel runs out or power changes, so
+        # an equal time does not prove the upgrades are the same. Against an
+        # ESI reading, a copy that disagrees on them is not adopted.
+        if copy_bay == held and hub.corptools_updated_at is None:
+            copy_states = {
+                u.get("type_id"): u.get("power_state") for u in data.get("upgrades") or []
+            }
+            held_states = {u.type_id: u.power_state for u in hub.upgrades.all()}
+            if copy_states != held_states:
+                return "its upgrade states disagree with Holdfast's ESI reading"
+    if not (data.get("reagent_bay") or {}).get("reagents") and hub.reagents.exists():
+        return "no reagents; probably mid-write"
+    if not data.get("upgrades") and hub.upgrades.exists():
+        return "no upgrades; probably mid-write"
+    return ""
+
+
+def update_owner(owner: Owner, detail_budget: int = None, listings: bool = True) -> dict:
     """Refresh one corporation, within this run's detail-call budget.
+
+    ``listings=False`` is the top-up run: it skips the two listings, which the
+    hourly run has just pulled, and refreshes only structures still due. When
+    nothing is due -- all adopted from corptools, or all refreshed within
+    ``DETAIL_FRESH`` -- no token is fetched and ESI is not called at all.
 
     Returns counts plus ``complete``, which is False when the budget ran out
     before every structure was refreshed. That is a normal steady state for a
     large corporation, not an error -- the remainder is picked up next run.
     """
-    token = owner.fetch_token()
     if detail_budget is None:
         detail_budget = HOLDFAST_DETAIL_CALLS_PER_RUN
     # The setting is in detail calls, because that is what an operator can
@@ -510,19 +722,33 @@ def update_owner(owner: Owner, detail_budget: int = None) -> dict:
     type_memo: dict = {}
     system_memo: dict = {}
 
-    hubs = sync_sov_hub_listing(owner, token, system_memo)
-    skyhooks = sync_skyhook_listing(owner, token)
+    token = None
+    if listings:
+        token = owner.fetch_token()
+        hubs = sync_sov_hub_listing(owner, token, system_memo)
+        skyhooks = sync_skyhook_listing(owner, token)
+    else:
+        hubs = SovHub.objects.filter(owner=owner).count()
+        skyhooks = Skyhook.objects.filter(owner=owner).count()
 
-    hubs_done, hooks_done = refresh_details(owner, token, budget, type_memo)
+    stats = {"sov_hubs": hubs, "skyhooks": skyhooks}
+    adopt_hubs_from_corptools(owner, type_memo, stats)
 
-    return {
-        "sov_hubs": hubs,
-        "skyhooks": skyhooks,
-        "hub_details": hubs_done,
-        "skyhook_details": hooks_done,
-        "complete": (hubs_done + hooks_done) >= (hubs + skyhooks),
-        "rate_limited": budget.exhausted_by_esi,
-    }
+    hubs_done = hooks_done = 0
+    if details_due_count(owner):
+        if token is None:
+            token = owner.fetch_token()
+        hubs_done, hooks_done = refresh_details(owner, token, budget, type_memo)
+
+    stats.update(
+        {
+            "hub_details": hubs_done,
+            "skyhook_details": hooks_done,
+            "complete": details_due_count(owner) == 0,
+            "rate_limited": budget.exhausted_by_esi,
+        }
+    )
+    return stats
 
 
 # --------------------------------------------------------------------------

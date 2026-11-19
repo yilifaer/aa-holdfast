@@ -1,7 +1,7 @@
 """The app's periodic tasks, as one importable dict.
 
-Eleven schedule entries pasted into ``local.py`` by hand is eleven chances to
-paste ten. Leaving one out does not fail loudly either -- it quietly removes a
+Twelve schedule entries pasted into ``local.py`` by hand is twelve chances to
+paste eleven. Leaving one out does not fail loudly either -- it quietly removes a
 feature, which is a bad way to find out about it a week later. So the schedule
 lives here and an install merges it::
 
@@ -17,19 +17,29 @@ anything that needs the app registry -- only ``celery.schedules``.
 
 The minute offsets are deliberate rather than decorative: the tasks that read
 ESI are spread across the hour so they do not all reach for the same rate-limit
-bucket at once, and ``track_workforce`` runs five minutes after the owner sync
-so it reads workforce numbers that were just refreshed rather than the previous
-hour's.
+bucket at once, and ``track_workforce`` runs five minutes after each possible
+owner refresh (the hourly sync and the top-ups) so it reads workforce numbers
+that were just refreshed rather than the previous hour's.
 """
 
 from celery.schedules import crontab
 
 CELERYBEAT_SCHEDULE = {
-    # Structures. Each run pulls two listings plus a rotating slice of
-    # structure details -- see the rate limiting section of the README.
+    # Structures, hourly: the two listings plus a rotating slice of structure
+    # details -- see the rate limiting section of the README. CCP caches these
+    # routes for an hour, so more often only re-reads the same answer.
     "holdfast_update_all_owners": {
         "task": "holdfast.tasks.update_all_owners",
-        "schedule": crontab(minute="7,22,37,52"),
+        "schedule": crontab(minute=7),
+    },
+    # A corporation with more structures than one run's budget has the rest
+    # still due; this does the details only, and only for owners that have
+    # some. It is what lets a large corporation rotate as fast as when the sync
+    # ran every fifteen minutes. Not wanted? Pop this entry in local.py:
+    # CELERYBEAT_SCHEDULE.pop("holdfast_top_up_owner_details")
+    "holdfast_top_up_owner_details": {
+        "task": "holdfast.tasks.top_up_all_owners",
+        "schedule": crontab(minute="22,37,52"),
     },
     # Reads workforce, so it follows the owner sync rather than leading it.
     "holdfast_track_workforce": {

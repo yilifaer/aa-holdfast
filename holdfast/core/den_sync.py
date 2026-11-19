@@ -13,6 +13,12 @@ public equivalent, which has two consequences that shape this whole module:
 
 Budgets here are small on purpose: the ``char-structure`` bucket allows only
 30 requests per 15 minutes, and ``char-notification`` only 15.
+
+With allianceauth-corptools installed, an operator's dens and tactical
+operations are read from its tables when its copy is recent and not older than
+what Holdfast already holds (``thirdparty.corptools_source``), which leaves the
+notifications as this module's only ESI call. Without corptools, or when its
+copy will not do, nothing changes.
 """
 
 from datetime import timedelta
@@ -43,6 +49,7 @@ from ..models import (
     Skyhook,
 )
 from ..providers import esi
+from ..thirdparty import corptools_source
 from .esi_sync import ESIBucketLimitException
 
 logger = get_extension_logger(__name__)
@@ -183,8 +190,15 @@ def _fetch_den_detail(den_character, token, den):
             detail_updated_at=timezone.now()
         )
         return
-    data = detail.model_dump()
+    _store_den_detail(den, detail.model_dump(), timezone.now())
 
+
+def _store_den_detail(den, data, observed_at):
+    """Write one den's details, from ESI's shape of them.
+
+    Shared by the fetch and the corptools copy, so what is stored is decided
+    in one place. ``observed_at`` is when the reading was taken.
+    """
     evolution = data.get("evolution") or {}
     development = evolution.get("development") or {}
     anarchy = evolution.get("anarchy") or {}
@@ -203,10 +217,43 @@ def _fetch_den_detail(den_character, token, den):
         skyhook_id=skyhook.get("id"),
         skyhook_corporation_id=skyhook.get("corporation_id"),
         reinforce_end=reinforce.get("end"),
-        detail_updated_at=timezone.now(),
+        detail_updated_at=observed_at,
     )
     den.refresh_from_db()
     link_den_to_slot(den)
+
+
+def store_dens_from_copy(den_character, copies, planet_memo) -> int:
+    """Make this character's dens match a corptools copy.
+
+    The copy is the whole truth about which dens exist, as the listing is on
+    the ESI path: new ones are created, the rest updated, and any the copy
+    does not have are removed. Returns how many dens the copy holds.
+    """
+    for den_id, data in copies.rows.items():
+        planet_id = data.get("planet_id")
+        planet = _resolve_planet(planet_id, planet_memo)
+        den, _ = MercenaryDen.objects.update_or_create(
+            den_id=den_id,
+            defaults={
+                "den_character": den_character,
+                "eve_character": den_character.character,
+                "planet_id": planet_id,
+                "eve_planet": planet,
+                "eve_solar_system": planet.eve_solar_system if planet else None,
+                "last_seen_at": copies.stamp,
+            },
+        )
+        _store_den_detail(den, data, copies.stamp)
+
+    removed, _ = (
+        MercenaryDen.objects.filter(den_character=den_character)
+        .exclude(den_id__in=list(copies.rows))
+        .delete()
+    )
+    if removed:
+        logger.info("%s: %s den(s) gone", den_character, removed)
+    return len(copies.rows)
 
 
 # --------------------------------------------------------------------------
@@ -251,28 +298,66 @@ def sync_operations(den_character: DenCharacter, token) -> int:
             logger.warning("%s: activity bucket exhausted", den_character)
             break
         data = detail.model_dump()
-        den_id = data.get("mercenary_den_id") or entry.get("mercenary_den_id")
-        dungeon_type_id = data.get("dungeon_type_id")
-        MercenaryTacticalOperation.objects.update_or_create(
-            operation_id=operation_id,
-            defaults={
-                "den_character": den_character,
-                "den": MercenaryDen.objects.filter(den_id=den_id).first(),
-                "mercenary_den_id": den_id,
-                # Stored raw: dungeon ids are not inventory type ids, and
-                # resolving one against the type tables produces a confident
-                # wrong answer rather than an empty one.
-                "dungeon_type_id": dungeon_type_id,
-                "state": data.get("state") or "Unspecified",
-                "expires": data.get("expires"),
-                "updated_at": timezone.now(),
-            },
+        _store_operation(
+            den_character,
+            operation_id,
+            data,
+            data.get("mercenary_den_id") or entry.get("mercenary_den_id"),
+            timezone.now(),
         )
 
     MercenaryTacticalOperation.objects.filter(den_character=den_character).exclude(
         operation_id__in=seen
     ).delete()
     return len(seen)
+
+
+def _store_operation(den_character, operation_id, data, den_id, updated_at):
+    """Write one operation, from ESI's shape of it."""
+    MercenaryTacticalOperation.objects.update_or_create(
+        operation_id=operation_id,
+        defaults={
+            "den_character": den_character,
+            "den": MercenaryDen.objects.filter(den_id=den_id).first(),
+            "mercenary_den_id": den_id,
+            # Stored raw: dungeon ids are not inventory type ids, and
+            # resolving one against the type tables produces a confident
+            # wrong answer rather than an empty one.
+            "dungeon_type_id": data.get("dungeon_type_id"),
+            "state": data.get("state") or "Unspecified",
+            "expires": data.get("expires"),
+            "updated_at": updated_at,
+        },
+    )
+
+
+def store_operations_from_copy(den_character, copies) -> int:
+    """Make this character's operations match a corptools copy.
+
+    The operation's id is the primary key, and the alert log and the
+    operator's dismissal both hang off it. corptools spells the id as a UUID
+    and may not match the spelling already stored, so an operation we already
+    hold under another spelling of the same UUID keeps the key it has;
+    otherwise it would be a new row, announced again, with the dismissal
+    gone.
+    """
+    held = {
+        corptools_source.normalise_operation_id(key): key
+        for key in MercenaryTacticalOperation.objects.filter(
+            den_character=den_character
+        ).values_list("operation_id", flat=True)
+    }
+    keys = set()
+    for raw_id, data in copies.rows.items():
+        key = held.get(corptools_source.normalise_operation_id(raw_id), raw_id)
+        keys.add(key)
+        _store_operation(
+            den_character, key, data, data.get("mercenary_den_id"), copies.stamp
+        )
+    MercenaryTacticalOperation.objects.filter(den_character=den_character).exclude(
+        operation_id__in=keys
+    ).delete()
+    return len(keys)
 
 
 # --------------------------------------------------------------------------
@@ -477,24 +562,114 @@ def track_workforce_high_water() -> dict:
 # --------------------------------------------------------------------------
 
 
+def _newest_den_reading(den_character):
+    """The latest time anything was read about this character's dens."""
+    times = []
+    for den in MercenaryDen.objects.filter(den_character=den_character):
+        times += [t for t in (den.detail_updated_at, den.last_seen_at) if t]
+    return max(times, default=None)
+
+
+def _newest_operation_reading(den_character):
+    return (
+        MercenaryTacticalOperation.objects.filter(den_character=den_character)
+        .order_by("-updated_at")
+        .values_list("updated_at", flat=True)
+        .first()
+    )
+
+
+def _take_den_copy(den_character, copies):
+    """Whether to use this corptools copy of the dens, and if not, why.
+
+    Returns ``(use, unchanged, reason)``. A copy is refused when it is older
+    than anything Holdfast has read about these dens: taking it would flip a
+    den back to an earlier state and announce the change twice. It is also
+    refused when it is empty while we hold dens, because corptools writes
+    these a den at a time and an empty copy is as likely to be a read in the
+    middle of that as a den that is really gone -- ESI can tell the two apart.
+    ``unchanged`` means it is the very copy already stored; nothing to write.
+    """
+    if not copies.usable:
+        return False, False, copies.reason
+    newest = _newest_den_reading(den_character)
+    if newest is not None and copies.stamp < newest:
+        return False, False, "older than what Holdfast already holds"
+    if not copies.rows and newest is not None:
+        return False, False, "no dens in the copy; probably mid-write"
+    return True, copies.stamp == newest, ""
+
+
+def _take_operation_copy(den_character, copies):
+    if not copies.usable:
+        return False, False, copies.reason
+    newest = _newest_operation_reading(den_character)
+    if newest is not None and copies.stamp < newest:
+        return False, False, "older than what Holdfast already holds"
+    return True, copies.stamp == newest, ""
+
+
 def update_den_character(den_character: DenCharacter) -> dict:
-    """Refresh one operator's dens, operations and notifications."""
+    """Refresh one operator's dens, operations and notifications.
+
+    Dens and operations come from allianceauth-corptools when it holds a copy
+    recent enough and not older than ours; otherwise from ESI, as ever. The
+    order is fixed -- dens, then operations (which link to dens), then
+    notifications -- and notifications always come from ESI: corptools does not
+    keep them, and the attack alerts are built on them. The token is fetched
+    first either way because of that.
+    """
     token = den_character.fetch_token()
     planet_memo: dict = {}
+    stats: dict = {}
 
-    dens = sync_den_listing(den_character, token, planet_memo)
-    details = refresh_den_details(
-        den_character, token, HOLDFAST_DEN_DETAIL_CALLS_PER_RUN
+    den_copies = corptools_source.den_copies(den_character)
+    use, unchanged, reason = _take_den_copy(den_character, den_copies)
+    if use:
+        dens = len(den_copies.rows) if unchanged else store_dens_from_copy(
+            den_character, den_copies, planet_memo
+        )
+        details = 0
+    else:
+        dens = sync_den_listing(den_character, token, planet_memo)
+        details = refresh_den_details(
+            den_character, token, HOLDFAST_DEN_DETAIL_CALLS_PER_RUN
+        )
+
+    operation_copies = corptools_source.operation_copies(den_character)
+    use_ops, ops_unchanged, ops_reason = _take_operation_copy(
+        den_character, operation_copies
     )
-    operations = sync_operations(den_character, token)
+    if use_ops:
+        operations = (
+            len(operation_copies.rows)
+            if ops_unchanged
+            else store_operations_from_copy(den_character, operation_copies)
+        )
+    else:
+        operations = sync_operations(den_character, token)
+
     events = sync_notifications(den_character, token)
 
-    return {
-        "dens": dens,
-        "den_details": details,
-        "operations": operations,
-        "new_events": events,
-    }
+    stats.update(
+        {
+            "dens": dens,
+            "den_details": details,
+            "operations": operations,
+            "new_events": events,
+        }
+    )
+    # Only when corptools is installed, so an install without it logs and
+    # reports exactly what it always did.
+    if den_copies.installed or operation_copies.installed:
+        stats["dens_from"] = "corptools" if use else "esi"
+        stats["operations_from"] = "corptools" if use_ops else "esi"
+        stats["corptools"] = "; ".join(
+            f"{what}: {why}"
+            for what, why in (("dens", reason), ("operations", ops_reason))
+            if why
+        ) or "ok"
+    return stats
 
 
 def note_idle(den_character: DenCharacter, stats: dict) -> None:

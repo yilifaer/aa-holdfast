@@ -1,7 +1,5 @@
 """Sovereignty section: fuel, ADM, timers, system cost, settings."""
 
-from datetime import timedelta
-
 from allianceauth.eveonline.models import EveAllianceInfo
 from django.contrib import messages
 from django.shortcuts import redirect, render
@@ -25,6 +23,7 @@ from .common import (
     require_any,
     routes_for_section,
     save_routes,
+    sort_dashboard_items,
     sov_can_enter,
     sov_can_manage,
     sov_can_view_all,
@@ -95,7 +94,12 @@ def dashboard(request):
             items.append(
                 {
                     "severity": "danger",
-                    "when": None,
+                    # Offline since the earliest of them; unknown ones are
+                    # left out rather than guessed.
+                    "when": min(
+                        (u.low_since for u in starved if u.low_since), default=None
+                    ),
+                    "since": True,
                     "kind": f"{len(starved)} upgrade(s) unpowered",
                     "where": hub.system_name,
                     "system": hub.system_name,
@@ -145,9 +149,7 @@ def dashboard(request):
                 }
             )
 
-    order = {"critical": 0, "danger": 1, "warning": 2, "info": 3}
-    far = timezone.now() + timedelta(days=3650)
-    items.sort(key=lambda i: (order.get(i["severity"], 9), i["when"] or far))
+    sort_dashboard_items(items)
 
     hubs = list(visible_hubs(user))
     severities = [config.fuel_severity(h.hours_of_fuel_left) for h in hubs]

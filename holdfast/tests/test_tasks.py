@@ -55,8 +55,11 @@ from .test_home_alliance import (
 BROKER_DOWN = OperationalError("[Errno 111] Connection refused")
 
 # Queued one row at a time by the fan-out above them, so they share its gap.
+# update_owner has two fan-outs: the hourly sync and the details-only top-up at
+# :22, :37 and :52. The top-up is the tighter of the two, so it is the one the
+# lock has to fit inside.
 FANNED_OUT = {
-    "update_owner": "update_all_owners",
+    "update_owner": "top_up_all_owners",
     "update_den_character": "update_all_den_characters",
 }
 

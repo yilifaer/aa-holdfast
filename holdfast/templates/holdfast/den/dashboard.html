@@ -17,7 +17,7 @@
             <a class="holdfast-tile {% if officer_items %}holdfast-tile--danger{% endif %}" href="{% url 'holdfast:den_admin' %}">
                 <div class="holdfast-tile__label">{% translate "Alliance-wide" %}</div>
                 <div class="holdfast-tile__value">{{ officer_items|length }}</div>
-                <div class="holdfast-tile__note">{% translate "claims, siphons, overdue" %}</div>
+                <div class="holdfast-tile__note">{% translate "claims, siphons, upgrades offline, overdue" %}</div>
             </a>
         {% endif %}
     </div>

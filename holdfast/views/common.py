@@ -13,11 +13,13 @@ about which is which:
   for one group.
 """
 
+from datetime import timedelta
 from functools import wraps
 
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db.models import Q
+from django.utils import timezone
 
 from ..core.scope import tracked_alliance_ids
 from ..models import DenSlot, Owner, Skyhook, SovHub
@@ -318,3 +320,25 @@ def save_routes(request, section):
             route.is_routed = False
         route.save(update_fields=["is_enabled", "is_routed"])
         route.webhooks.set(chosen)
+
+
+SEVERITY_ORDER = {"critical": 0, "danger": 1, "warning": 2, "info": 3}
+
+
+def sort_dashboard_items(items, now=None):
+    """Order dashboard rows: severity, then deadlines, then ongoing, then untimed.
+
+    A "since" row carries a start in the past and a deadline row a time in the
+    future, so on one ascending axis a long-running siphon sorts above a
+    timer that is about to fire. Within a severity the imminent deadline comes
+    first, soonest first, then what has been going on longest, then rows with
+    no time at all.
+    """
+    far = (now or timezone.now()) + timedelta(days=3650)
+
+    def key(item):
+        when = item["when"]
+        group = 2 if when is None else 1 if item.get("since") else 0
+        return (SEVERITY_ORDER.get(item["severity"], 9), group, when or far)
+
+    items.sort(key=key)

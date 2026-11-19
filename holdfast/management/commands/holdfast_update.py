@@ -50,7 +50,8 @@ class Command(BaseCommand):
                 "Detail calls to spend per owner this run. Defaults to "
                 "HOLDFAST_DETAIL_CALLS_PER_RUN. Raising it past the "
                 "corp-structure rate limit (300 per 15 minutes per token) "
-                "will just get you throttled."
+                "will just get you throttled. Structures refreshed in the "
+                "last 50 minutes are skipped."
             ),
         )
 

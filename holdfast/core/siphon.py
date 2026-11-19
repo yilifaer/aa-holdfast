@@ -25,6 +25,7 @@ showed at -10.0% were not.
 """
 
 from allianceauth.services.hooks import get_extension_logger
+from django.utils import timezone
 
 # Rates worth testing, widest first. Only 10% has been seen in the wild; the
 # rest are here so a higher anarchy level does not go unnoticed.
@@ -93,17 +94,39 @@ def infer_from_peak(effective_workforce, peak):
     return None, None
 
 
+def siphon_since(previous_percent, previous_since, percent, now):
+    """When this siphon began, given what was stored and what was just read.
+
+    The clock starts the first time a reading shows a siphon and runs until
+    one does not. A change of rate (10% to 20%) is the same den getting
+    stronger, not a new siphon, so it keeps the start it had. A siphon that was
+    already there before the start was recorded stays unknown rather than
+    being dated to now: the dashboard would call it brand new.
+    """
+    if percent is None:
+        return None
+    if previous_percent is not None:
+        return previous_since
+    return now
+
+
 def apply_to(skyhook) -> bool:
     """Update a skyhook's siphon fields in place. True if anything changed."""
     percent, base = detect_siphon(skyhook.effective_workforce)
     if (skyhook.workforce_siphon_percent, skyhook.workforce_base) == (percent, base):
         return False
+    skyhook.workforce_siphon_since = siphon_since(
+        skyhook.workforce_siphon_percent,
+        skyhook.workforce_siphon_since,
+        percent,
+        timezone.now(),
+    )
     skyhook.workforce_siphon_percent = percent
     skyhook.workforce_base = base
     return True
 
 
-def starved_upgrades_in_system(skyhook):
+def starved_upgrades_in_system(skyhook, owners=None):
     """Sovereignty upgrades that are unpowered in this skyhook's own system.
 
     A skyhook's workforce and power go to the hub in its system, so a den
@@ -111,24 +134,42 @@ def starved_upgrades_in_system(skyhook):
     dropped offline. Plausible, not proven -- an alliance that simply
     overbuilt looks identical from here -- which is why the alerts word it as
     a likely cause and why saying so at all is a setting.
+
+    The hub is looked for across every active owner, not just the skyhook's:
+    the skyhook can belong to one of the alliance's corporations while the
+    system's sovereignty hub sits under the one that holds the sov. ``owners``
+    narrows that to what the caller may show -- the dashboards pass the
+    viewer's visible corporations.
     """
-    hubs = skyhook.owner.sov_hubs.filter(solar_system_id=skyhook.eve_solar_system_id)
-    return [
-        upgrade
-        for hub in hubs
-        for upgrade in hub.upgrades.all()
-        if upgrade.power_state == "Low"
-    ]
+    if skyhook.eve_solar_system_id is None:
+        return []
+    if owners is None:
+        from ..models import Owner
+
+        owners = Owner.objects.active()
+    from ..models import PowerState, SovHubUpgrade
+
+    return list(
+        SovHubUpgrade.objects.filter(
+            hub__owner__in=owners,
+            hub__solar_system_id=skyhook.eve_solar_system_id,
+            power_state=PowerState.LOW,
+        )
+        .select_related("eve_type", "hub")
+        .order_by("hub_id", "type_id")
+    )
 
 
 def siphons_in_system(hub):
     """Skyhooks in this hub's system that something is taking workforce from.
 
-    The other direction of the same question, for the sovereignty alerts.
+    The other direction of the same question, for the sovereignty alerts. Any
+    active owner's skyhook counts, for the reason given on
+    ``starved_upgrades_in_system``.
     """
-    from ..models import Skyhook
+    from ..models import Owner, Skyhook
 
     candidates = Skyhook.objects.filter(
-        owner=hub.owner, eve_solar_system_id=hub.solar_system_id
+        owner__in=Owner.objects.active(), eve_solar_system_id=hub.solar_system_id
     ).select_related("eve_planet", "den_slot")
     return [s for s in candidates if s.is_siphon_suspected]
